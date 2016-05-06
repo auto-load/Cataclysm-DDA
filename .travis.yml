@@ -27,8 +27,11 @@ before_install:
       'https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.0.1.dmg'
     )
   - |
-    if [[ "$TCI_USE_TILES" == yes && ! -d "$TCI_DIR_DEPS" ]]; then
-      mkdir -p $TCI_DIR_TEMP $TCI_DIR_DEPS
+    mkdir -p $TCI_DIR_DEPS
+    if [[ "$TCI_USE_TILES" == yes ]] \
+        && find "$TCI_DIR_DEPS" -maxdepth 0 -type d -empty
+    then
+      mkdir -p $TCI_DIR_TEMP
       pushd $TCI_DIR_TEMP
       for url in "${TCI_URLS[@]}"; do
         curl -LO --fail --retry 5 $url
