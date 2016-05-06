@@ -69,7 +69,7 @@ deploy:
     tags: true
 
 notifications:
-notifications_off:
+#notifications_off:
   irc:
     channels:
       - 'irc.freenode.org#CataclysmDDA'
