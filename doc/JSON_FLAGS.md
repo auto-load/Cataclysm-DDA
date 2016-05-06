@@ -260,9 +260,8 @@ Flags used to describe monsters and define their properties and abilities.
 - ```FLAMMABLE``` Monster catches fire, burns, and spreads fire to nearby objects.
 - ```REVIVES``` Monster corpse will revive after a short period of time.
 - ```CHITIN``` May produce chitin when butchered.
-- ```VERMIN``` Creature is too small for normal combat, butchering etc.
+- ```VERMIN``` Obsolete flag for inconsequential monsters, now prevents loading.
 - ```NOGIB``` Does not leave gibs / meat chunks when killed with huge damage.
-- ```HUNTS_VERMIN``` Creature uses vermin as a food source. Not implemented.
 - ```ABSORBS``` Consumes objects it moves over.
 - ```LARVA``` Creature is a larva. Currently used for gib and blood handling.
 - ```ARTHROPOD_BLOOD``` Forces monster to bleed hemolymph.
@@ -582,6 +581,7 @@ listings, as ids are constant throughout DDA's code.  Happy chambering!  :-)
 - ```EXPLOSIVE``` Explodes without any shrapnel.
 - ```EXPLOSIVE_BIG``` Large explosion without any shrapnel.
 - ```EXPLOSIVE_HUGE``` Huge explosion without any shrapnel.
+- ```CUSTOM_EXPLOSION``` Explosion as specified in ```"explosion"``` field of used ammo. See JSON_INFO.md
 - ```FRAG``` Small explosion that spreads shrapnel.
 - ```INCENDIARY``` Lights target on fire.
 - ```NAPALM``` Explosion that spreads fire.
@@ -779,7 +779,6 @@ Some armor flags, such as `WATCH` and `ALARMCLOCK` are compatible with other ite
 - ```PKILL_3``` Heavy painkiller.
 - ```PKILL_4``` "You shoot up."
 - ```PKILL_L``` Slow-release painkiller.
-- ```BREW``` ... Can be put into fermenting vat.
 - ```HIDDEN_POISON``` ... Food is poisonous, visible only with a certain survival skill level.
 - ```HIDDEN_HALLU``` ... Food causes hallucinations, visible only with a certain survival skill level.
 - ```USE_ON_NPC``` Can be used on NPCs (not necessarily by them).

@@ -179,7 +179,7 @@ void defense_game::game_over()
 void defense_game::init_mtypes()
 {
     for( auto &type : MonsterGenerator::generator().get_all_mtypes() ) {
-        mtype *const t = const_cast<mtype *>( type );
+        mtype *const t = const_cast<mtype *>( &type );
         t->difficulty *= 1.5;
         t->difficulty += int( t->difficulty / 5 );
         t->flags.insert( MF_BASHES );
@@ -1092,8 +1092,15 @@ Press %s to buy everything in your cart, %s to buy nothing."),
         g->u.cash -= total_price;
         bool dropped_some = false;
         for (unsigned i = 0; i < items[0].size(); i++) {
-            item tmp( items[0][i] , calendar::turn);
+            item tmp(items[0][i]);
             tmp = tmp.in_its_container();
+
+            // Guns bought from the caravan should always come with an empty
+            // magazine.
+            if (tmp.is_gun() && !tmp.magazine_integral()) {
+                tmp.emplace_back(tmp.magazine_default());
+            }
+
             for (int j = 0; j < item_count[0][i]; j++) {
                 if (g->u.can_pickVolume(tmp.volume()) && g->u.can_pickWeight(tmp.weight())) {
                     g->u.i_add(tmp);
@@ -1154,6 +1161,14 @@ std::vector<itype_id> caravan_items(caravan_category cat)
                   "ak47", "762_m87", "m4a1", "556", "savage_111f", "hk_g3",
                   "762_51", "hk_g80", "12mm", "plasma_rifle", "plasma"
               };
+
+        // Add the default magazine types for each gun.
+        for (unsigned i = 0, size = ret.size(); i < size; i++) {
+            item tmp(ret[i]);
+            if (tmp.is_gun() && !tmp.magazine_integral()) {
+                ret.emplace_back(tmp.magazine_default());
+            }
+        }
         break;
 
     case CARAVAN_COMPONENTS:
@@ -1301,10 +1316,10 @@ void draw_caravan_items(WINDOW *w, std::vector<itype_id> *items,
 int caravan_price(player &u, int price)
 {
     ///\EFFECT_BARTER reduces caravan prices, 5% per point, up to 50%
-    if (u.skillLevel( skill_barter ) > 10) {
+    if (u.get_skill_level( skill_barter ) > 10) {
         return int( double(price) * .5);
     }
-    return int( double(price) * (1.0 - double(u.skillLevel( skill_barter )) * .05));
+    return int( double(price) * (1.0 - double(u.get_skill_level( skill_barter )) * .05));
 }
 
 void defense_game::spawn_wave()

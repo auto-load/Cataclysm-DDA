@@ -30,6 +30,9 @@ bool string_id<effect_type>::is_valid() const
     return effect_types.count( *this ) > 0;
 }
 
+template<>
+const efftype_id string_id<effect_type>::NULL_ID( "null" );
+
 const efftype_id effect_weed_high( "weed_high" );
 
 void weed_msg(player *p) {
@@ -1005,7 +1008,7 @@ double effect::get_percentage(std::string arg, int val, bool reduced) const
     return ret;
 }
 
-bool effect::activated(unsigned int turn, std::string arg, int val, bool reduced, double mod) const
+bool effect::activated(int turn, std::string arg, int val, bool reduced, double mod) const
 {
     auto &mod_data = eff_type->mod_data;
     auto found_top_base = mod_data.find(std::make_tuple("base_mods", reduced, arg, "chance_top"));
