@@ -147,6 +147,7 @@ const efftype_id effect_valium( "valium" );
 const efftype_id effect_visuals( "visuals" );
 const efftype_id effect_weed_high( "weed_high" );
 const efftype_id effect_winded( "winded" );
+const efftype_id effect_nausea( "nausea" );
 
 const matype_id style_none( "style_none" );
 
@@ -1815,6 +1816,8 @@ bool player::is_immune_effect( const efftype_id &eff ) const
         return worn_with_flag("DEAF") || has_bionic("bio_ears") || is_wearing("rm13_armor_on");
     } else if( eff == effect_corroding ) {
         return has_trait( "ACIDPROOF" );
+    } else if( eff == effect_nausea ) {
+        return has_trait( "STRONGSTOMACH" );
     }
 
     return false;
@@ -2144,8 +2147,8 @@ void player::memorial( std::ostream &memorial_file, std::string epitaph )
         memorial_file << indent << next_item.invlet << " - " << next_item.tname(1, false);
         if( next_item.charges > 0 ) {
             memorial_file << " (" << next_item.charges << ")";
-        } else if( next_item.contents.size() == 1 && next_item.contents[0].charges > 0 ) {
-            memorial_file << " (" << next_item.contents[0].charges << ")";
+        } else if( next_item.contents.size() == 1 && next_item.contents.front().charges > 0 ) {
+            memorial_file << " (" << next_item.contents.front().charges << ")";
         }
         memorial_file << "\n";
     }
@@ -2165,8 +2168,8 @@ void player::memorial( std::ostream &memorial_file, std::string epitaph )
         }
         if( next_item.charges > 0 ) {
             memorial_file << " (" << next_item.charges << ")";
-        } else if( next_item.contents.size() == 1 && next_item.contents[0].charges > 0 ) {
-            memorial_file << " (" << next_item.contents[0].charges << ")";
+        } else if( next_item.contents.size() == 1 && next_item.contents.front().charges > 0 ) {
+            memorial_file << " (" << next_item.contents.front().charges << ")";
         }
         memorial_file << "\n";
     }
@@ -3310,23 +3313,17 @@ void player::disp_morale()
 
 static std::string print_gun_mode( const player &p )
 {
-    // Print current weapon, or attachment if active.
-    const item *gunmod = p.weapon.gunmod_current();
-    std::stringstream attachment;
-    if( gunmod != NULL ) {
-        attachment << gunmod->type_name().c_str();
-        if( gunmod->ammo_remaining() ) {
-            attachment << " (" << gunmod->ammo_remaining() << ")";
-        }
-        return string_format( _( "%s (Mod)" ), attachment.str().c_str() );
-    } else {
-        if( p.weapon.get_gun_mode() == "MODE_BURST" ) {
-            return string_format( _( "%s (Burst)" ), p.weapname().c_str() );
-        } else if( p.weapon.get_gun_mode() == "MODE_REACH" ) {
-            return string_format( _( "%s (Bayonet)" ), p.weapname().c_str() );
+    auto m = p.weapon.gun_current_mode();
+    if( m ) {
+        if( m.melee || !m->is_gunmod() ) {
+            return string_format( m.mode.empty() ? "%s": "%s (%s)",
+                                  p.weapname().c_str(), m.mode.c_str() );
         } else {
-            return string_format( _( "%s" ), p.weapname().c_str() );
+            return string_format( "%s (%i/%i)", m->tname().c_str(),
+                                  m->ammo_remaining(), m->ammo_capacity() );
         }
+    } else {
+        return p.weapname();
     }
 }
 
@@ -5231,6 +5228,38 @@ void player::update_body( int from, int to )
     }
 }
 
+void player::update_vitamins( const vitamin_id& vit )
+{
+    if( is_npc() ) {
+        return; // NPCs cannot develop vitamin diseases
+    }
+
+    efftype_id def = vit.obj().deficiency();
+    efftype_id exc = vit.obj().excess();
+
+    int lvl = vit.obj().severity( vitamin_get( vit ) );
+    if( lvl <= 0 ) {
+        remove_effect( def );
+    }
+    if( lvl >= 0 ) {
+        remove_effect( exc );
+    }
+    if( lvl > 0 ) {
+        if( has_effect( def, num_bp ) ) {
+            get_effect( def, num_bp ).set_intensity( lvl, true );
+        } else {
+            add_effect( def, 1, num_bp, true, lvl );
+        }
+    }
+    if( lvl < 0 ) {
+        if( has_effect( exc, num_bp ) ) {
+            get_effect( exc, num_bp ).set_intensity( lvl, true );
+        } else {
+            add_effect( exc, 1, num_bp, true, lvl );
+        }
+    }
+}
+
 void player::get_sick()
 {
     // NPCs are too dumb to handle infections now
@@ -5763,35 +5792,22 @@ int player::addiction_level( add_type type ) const
     return 0;
 }
 
-bool player::siphon(vehicle *veh, const itype_id &desired_liquid)
+void player::siphon( vehicle &veh, const itype_id &desired_liquid )
 {
-    int liquid_amount = veh->drain( desired_liquid, veh->fuel_capacity(desired_liquid) );
-    item used_item( desired_liquid, calendar::turn );
+    const int used_item_amount = veh.drain( desired_liquid, veh.fuel_capacity( desired_liquid ) );
     const int fuel_per_charge = fuel_charges_to_amount_factor( desired_liquid );
-    used_item.charges = liquid_amount / fuel_per_charge;
+    item used_item( desired_liquid, calendar::turn, used_item_amount / fuel_per_charge );
     if( used_item.charges <= 0 ) {
         add_msg( _( "There is not enough %s left to siphon it." ), used_item.type_name().c_str() );
-        veh->refill( desired_liquid, liquid_amount );
-        return false;
+        veh.refill( desired_liquid, used_item_amount );
+        return;
     }
-    int extra = g->move_liquid( used_item );
-    if( extra == -1 ) {
-        // Failed somehow, put the liquid back and bail out.
-        veh->refill( desired_liquid, used_item.charges * fuel_per_charge );
-        return false;
-    }
-    int siphoned = liquid_amount - extra;
-    veh->refill( desired_liquid, extra );
-    if( siphoned > 0 ) {
-        add_msg(ngettext("Siphoned %1$d unit of %2$s from the %3$s.",
-                            "Siphoned %1$d units of %2$s from the %3$s.",
-                            siphoned),
-                   siphoned, used_item.tname().c_str(), veh->name.c_str());
-        //Don't consume turns if we decided not to siphon
-        return true;
-    } else {
-        return false;
-    }
+    // refill fraction parts (if fuel_per_charge > 1), so we don't have to consider them later
+    veh.refill( desired_liquid, used_item_amount % fuel_per_charge );
+
+    g->handle_liquid( used_item, nullptr, 0, nullptr, &veh );
+    // TODO: maybe add the message about the siphoned amount again.
+    veh.refill( desired_liquid, used_item.charges * fuel_per_charge );
 }
 
 void player::cough(bool harmful, int loudness)
@@ -6457,17 +6473,16 @@ void player::hardcoded_effects(effect &it)
                                            _("<npcname> loses some blood.") );
             mod_pain(1);
             apply_damage( nullptr, bp, 1 );
-            g->m.add_field( pos(), playerBloodType(), 1, 0 );
+            bleed();
         }
     } else if( id == effect_hallu ) {
         // TODO: Redo this to allow for variable durations
         // Time intervals are drawn from the old ones based on 3600 (6-hour) duration.
-        static bool puked = false;
-        int maxDuration = 3600;
-        int comeupTime = int(maxDuration*0.9);
-        int noticeTime = int(comeupTime + (maxDuration-comeupTime)/2);
-        int peakTime = int(maxDuration*0.8);
-        int comedownTime = int(maxDuration*0.3);
+        constexpr int maxDuration = 3600;
+        constexpr int comeupTime = int(maxDuration*0.9);
+        constexpr int noticeTime = int(comeupTime + (maxDuration-comeupTime)/2);
+        constexpr int peakTime = int(maxDuration*0.8);
+        constexpr int comedownTime = int(maxDuration*0.3);
         // Baseline
         if (dur == noticeTime) {
             add_msg_if_player(m_warning, _("You feel a little strange."));
@@ -6483,41 +6498,29 @@ void player::hardcoded_effects(effect &it)
                 add_msg_if_player(m_warning, _("Something feels very, very wrong."));
             }
         } else if (dur > peakTime && dur < comeupTime) {
-            if ((one_in(200) || x_in_y(vomit_mod(), 50)) && !puked) {
+            if( get_stomach_food() > 0 && (one_in(200) || x_in_y(vomit_mod(), 50)) ) {
                 add_msg_if_player(m_bad, _("You feel sick to your stomach."));
                 mod_hunger(-2);
-                if (one_in(6)) {
+                if( one_in( 6 ) ) {
                     vomit();
-                    if (one_in(2)) {
-                        // we've vomited enough for now
-                        puked = true;
-                    }
                 }
             }
-            if (is_npc() && one_in(200)) {
-                const char *npcText;
-                switch(rng(1,4)) {
-                    case 1:
-                        npcText = _("\"I think it's starting to kick in.\"");
-                        break;
-                    case 2:
-                        npcText = _("\"Oh God, what's happening?\"");
-                        break;
-                    case 3:
-                        npcText = _("\"Of course... it's all fractals!\"");
-                        break;
-                    default:
-                        npcText = _("\"Huh?  What was that?\"");
-                        break;
+            if( is_npc() && one_in( 200 ) ) {
+                static const std::array<std::string, 4> npc_hallu = {{
+                    _("\"I think it's starting to kick in.\""),
+                    _("\"Oh God, what's happening?\""),
+                    _("\"Of course... it's all fractals!\""),
+                    _("\"Huh?  What was that?\"")
+                }};
 
-                }
+                const std::string &npc_text = random_entry( npc_hallu );
                 ///\EFFECT_STR_NPC increases volume of hallucination sounds (NEGATIVE)
 
                 ///\EFFECT_INT_NPC decreases volume of hallucination sounds
                 int loudness = 20 + str_cur - int_cur;
                 loudness = (loudness > 5 ? loudness : 5);
                 loudness = (loudness < 30 ? loudness : 30);
-                sounds::sound( pos(), loudness, npcText);
+                sounds::sound( pos(), loudness, npc_text );
             }
         } else if (dur == peakTime) {
             // Visuals start
@@ -6530,7 +6533,7 @@ void player::hardcoded_effects(effect &it)
             mod_dex_bonus(-2);
             add_miss_reason(_("Dancing fractals distract you."), 2);
             mod_str_bonus(-1);
-            if (one_in(50)) {
+            if( is_player() && one_in( 50 ) ) {
                 g->spawn_hallucination();
             }
         } else if (dur == comedownTime) {
@@ -6539,7 +6542,6 @@ void player::hardcoded_effects(effect &it)
             } else {
                 add_msg_if_player(_("Things are returning to normal."));
             }
-            puked = false;
         }
     } else if( id == effect_cold ) {
         switch(bp) {
@@ -7589,7 +7591,11 @@ double player::vomit_mod()
     if (has_trait("VOMITOUS")) {
         mod *= 3;
     }
-
+    // If you're already nauseous, any food in your stomach greatly
+    // increases chance of vomiting. Liquids don't provoke vomiting, though.
+    if( get_stomach_food() != 0 && has_effect( effect_nausea ) ) {
+        mod *= 5 * get_effect_int( effect_nausea );
+    }
     return mod;
 }
 
@@ -8479,19 +8485,32 @@ void player::vomit()
     add_memorial_log(pgettext("memorial_male", "Threw up."),
                      pgettext("memorial_female", "Threw up."));
 
-    if (get_stomach_food() != 0 || get_stomach_water() != 0) {
+    const int stomach_contents = get_stomach_food() + get_stomach_water();
+    if( stomach_contents != 0 ) {
         mod_hunger(get_stomach_food());
         mod_thirst(get_stomach_water());
 
         set_stomach_food(0);
         set_stomach_water(0);
+        // Remove all joy form previously eaten food and apply the penalty
+        rem_morale( MORALE_FOOD_GOOD );
+        rem_morale( MORALE_FOOD_HOT );
+        rem_morale( MORALE_HONEY ); // bears must suffer too
+        add_morale( MORALE_VOMITED, -2 * stomach_contents, -40, 90, 45, false ); // 1.5 times longer
 
         g->m.add_field( adjacent_tile(), fd_bile, 1, 0 );
 
         add_msg_player_or_npc( m_bad, _("You throw up heavily!"), _("<npcname> throws up heavily!") );
     } else {
-        add_msg_if_player(m_warning, _("You feel nauseous, but your stomach is empty."));
+        add_msg_if_player( m_warning, _( "You retched, but your stomach is empty." ) );
     }
+
+    if( !has_effect( effect_nausea ) ) { // Prevents never-ending nausea
+        const effect dummy_nausea( &effect_nausea.obj(), 0, num_bp, false, 1, 0 );
+        add_effect( effect_nausea, std::max( dummy_nausea.get_max_duration() * stomach_contents / 21,
+                                             dummy_nausea.get_int_dur_factor() ) );
+    }
+
     moves -= 100;
     for( auto &elem : effects ) {
         for( auto &_effect_it : elem.second ) {
@@ -8928,6 +8947,7 @@ std::list<item> player::use_amount(itype_id it, int _quantity)
     }
     for( auto a = worn.begin(); a != worn.end() && quantity > 0; ) {
         if( a->use_amount( it, quantity, ret ) ) {
+            a->on_takeoff( *this );
             a = worn.erase( a );
         } else {
             ++a;
@@ -9244,7 +9264,7 @@ bool player::consume_item( item &target )
     }
     item *to_eat = nullptr;
     if( target.is_food_container( this ) ) {
-        to_eat = &target.contents[0];
+        to_eat = &target.contents.front();
     } else if( target.is_food( this ) ) {
         to_eat = &target;
     } else {
@@ -9341,7 +9361,7 @@ bool player::consume(int target_position)
     const bool was_in_container = target.is_food_container( this );
     if( consume_item( target ) ) {
         if( was_in_container ) {
-            i_rem( &target.contents[0] );
+            i_rem( &target.contents.front() );
         } else {
             i_rem( &target );
         }
@@ -9508,7 +9528,7 @@ bool player::can_wear( const item& it, bool alert ) const
         }
         return false;
     }
-    
+
     if( it.is_disgusting_for( g->u ) ) {
         if( alert ) {
             add_msg_if_player( m_info, _( "You can't wear that, it's filthy!" ) );
@@ -9935,6 +9955,25 @@ bool player::dispose_item( item& obj, const std::string& prompt )
 
 void player::mend_item( item_location&& obj, bool interactive )
 {
+    if( g->u.has_trait( "DEBUG_HS" ) ) {
+        uimenu menu( true, _( "Toggle which fault?" ) );
+        std::vector<std::pair<fault_id, bool>> opts;
+        for( const auto& f : obj->faults_potential() ) {
+            opts.emplace_back( f, obj->faults.count( f ) );
+            menu.addentry( -1, true, -1, string_format( "%s %s", opts.back().second ? _( "Mend" ) : _( "Break" ),
+                                                        f.obj().name().c_str() ) );
+        }
+        menu.query();
+        if( menu.ret >= 0 ) {
+            if( opts[ menu.ret ].second ) {
+                obj->faults.erase( opts[ menu.ret ].first );
+            } else {
+                obj->faults.insert( opts[ menu.ret ].first );
+            }
+        }
+        return;
+    }
+
     std::vector<std::pair<const fault *, bool>> faults;
     std::transform( obj->faults.begin(), obj->faults.end(), std::back_inserter( faults ), []( const fault_id& e ) {
         return std::make_pair<const fault *, bool>( &e.obj(), false );
@@ -9969,6 +10008,8 @@ void player::mend_item( item_location&& obj, bool interactive )
             auto comps = reqs.get_folded_components_list( w, c_white, inv );
 
             std::ostringstream descr;
+            descr << _( "<color_white>Time required:</color>\n" );
+            descr << "> " << calendar::print_duration( f.first->time() / 100 ) << "\n";
             descr << _( "<color_white>Skills:</color>\n" );
             for( const auto& e : f.first->skills() ) {
                 bool hasSkill = get_skill_level( skill_mechanics ) >= e.second;
@@ -9993,7 +10034,6 @@ void player::mend_item( item_location&& obj, bool interactive )
         sel = menu.ret;
     }
 
-    // @todo convert this in to a long activity
     if( sel >= 0 ) {
         if( !faults[ sel ].second ) {
             if( interactive ) {
@@ -10002,24 +10042,42 @@ void player::mend_item( item_location&& obj, bool interactive )
             return;
         }
 
-        const auto& reqs = faults[ sel ].first->requirements();
-        for( const auto& e : reqs.get_components() ) {
-            consume_items( e );
-        }
-        for( const auto& e : reqs.get_tools() ) {
-            consume_tools( e );
-        }
-        invalidate_crafting_inventory();
+        int pos = INT_MIN;
 
-        obj->faults.erase( faults[ sel ].first->id() );
+        switch( obj.where() ) {
+            case item_location::type::character:
+                pos = get_item_position( &*obj );
+                break;
+
+            case item_location::type::vehicle:
+                pos = g->m.veh_at( obj.position() )->find_part( *obj );
+                break;
+
+            default:
+                debugmsg( "unsupported item location type %i", static_cast<int>( obj.where() ) );
+                return;
+        }
+        assign_activity( ACT_MEND_ITEM, faults[ sel ].first->time(),
+                         static_cast<int>( obj.where() ), pos,
+                         faults[ sel ].first->id().str() );
+
+        activity.placement = obj.position();
     }
 }
 
-int player::item_handling_cost( const item& it, bool effects, int factor ) const {
-    int mv = std::max( 1, it.volume() * factor );
+int player::item_handling_cost( const item& it, bool effects, int factor, int qty ) const {
+
+    // If necessary create duplicate with appropriate number of charges
+    item obj = it;
+    obj = obj.split( qty );
+    if( obj.is_null() ) {
+        obj = it;
+    }
+
+    int mv = std::max( 1, obj.volume() * factor );
 
     // For single handed items use the least encumbered hand
-    if( it.is_two_handed( *this ) ) {
+    if( obj.is_two_handed( *this ) ) {
         mv += encumb( bp_hand_l ) + encumb( bp_hand_r );
     } else {
         mv += std::min( encumb( bp_hand_l ), encumb( bp_hand_r ) );
@@ -10053,13 +10111,17 @@ int player::item_store_cost( const item& it, const item& /* container */, bool e
 int player::item_reload_cost( const item& it, const item& ammo, long qty ) const
 {
     if( ammo.is_ammo() ) {
-        if( qty <= 0 ) {
-            qty = it.has_flag( "RELOAD_ONE") ? it.ammo_capacity() - it.ammo_remaining() : 1;
-        }
-        qty = std::min( ammo.charges, qty );
+        qty = std::max( std::min( ammo.charges, qty ), 1L );
+    } else if( ammo.is_ammo_container() ) {
+        qty = std::max( std::min( ammo.contents.front().charges, qty ), 1L );
+    } else if( ammo.is_magazine() ) {
+        qty = 1;
+    } else {
+        debugmsg( "cannot determine reload cost as %s is neither ammo or magazine", ammo.tname().c_str() );
+        return 0;
     }
 
-    int mv = item_handling_cost( ammo );
+    int mv = item_handling_cost( ammo, qty );
 
     if( ammo.has_flag( "MAG_BULKY" ) ) {
         mv *= 1.5; // bulky magazines take longer to insert
@@ -10076,13 +10138,9 @@ int player::item_reload_cost( const item& it, const item& ammo, long qty ) const
     ///\EFFECT_SHOTGUN decreases time taken to reload a shotgun
     ///\EFFECT_LAUNCHER decreases time taken to reload a launcher
 
+    int cost = ( it.is_gun() ? it.type->gun->reload_time : it.type->magazine->reload_time ) * qty;
+
     skill_id sk = it.is_gun() ? it.type->gun->skill_used : skill_gun;
-    int cost = it.is_gun() ? it.type->gun->reload_time : it.type->magazine->reload_time;
-
-    if( it.is_magazine() )  {
-        cost *= qty; // for magazines reload time is per round
-    }
-
     mv += cost / ( 1 + std::min( double( get_skill_level( sk ) ) * 0.075, 0.75 ) );
 
     if( it.has_flag( "STR_RELOAD" ) ) {
@@ -10168,8 +10226,6 @@ bool player::wear_item( const item &to_wear, bool interactive )
         add_msg( _("You put on your %s."), to_wear.tname().c_str() );
         moves -= item_wear_cost( to_wear );
 
-        worn.back().on_wear( *this );
-
         for (body_part i = bp_head; i < num_bp; i = body_part(i + 1))
         {
             if (to_wear.covers(i) && encumb(i) >= 40)
@@ -10184,11 +10240,11 @@ bool player::wear_item( const item &to_wear, bool interactive )
             add_msg_if_player( m_info, _( "You're deafened!" ) );
         }
     } else {
-        on_item_wear( to_wear );
         add_msg_if_npc( _("<npcname> puts on their %s."), to_wear.tname().c_str() );
     }
 
     item &new_item = worn.back();
+    new_item.on_wear( *this );
     if( new_item.invlet == 0 ) {
         inv.assign_empty_invlet( new_item, false );
     }
@@ -10301,15 +10357,12 @@ bool player::takeoff(int inventory_position, bool autodrop, std::vector<item> *i
     }
 
     if( items != nullptr ) {
-        w.on_takeoff(*this);
         items->push_back( w );
         taken_off = true;
     } else if (autodrop || volume_capacity() - w.get_storage() >= volume_carried() + w.volume()) {
-        w.on_takeoff(*this);
         inv.add_item_keep_invlet(w);
         taken_off = true;
     } else if (query_yn(_("No room in inventory for your %s.  Drop it?"), w.tname().c_str())) {
-        w.on_takeoff(*this);
         g->m.add_item_or_charges( pos(), w );
         taken_off = true;
     } else {
@@ -10320,6 +10373,7 @@ bool player::takeoff(int inventory_position, bool autodrop, std::vector<item> *i
         add_msg_player_or_npc( _("You take off your %s."),
                                _("<npcname> takes off their %s."),
                                w.tname().c_str() );
+        w.on_takeoff( *this );
         worn.erase( first_iter );
     }
 
@@ -10386,7 +10440,7 @@ hint_rating player::rate_action_mend( const item &it ) const
     if( !it.faults.empty() ) {
         return HINT_GOOD;
     }
-    return !it.type->engine || it.type->engine->faults.empty() ? HINT_CANT : HINT_IFFY;
+    return it.faults_potential().empty() ? HINT_CANT : HINT_IFFY;
 }
 
 hint_rating player::rate_action_disassemble( const item &it )
@@ -10526,13 +10580,13 @@ void player::use(int inventory_position)
     } else if (used->is_gunmod()) {
 
         // first check at least the minimum requirements are met
-        if( !can_use( *used ) ) {
+        if( !( can_use( *used ) || has_trait( "DEBUG_HS" ) ) ) {
             return;
         }
 
         int gunpos = g->inv_for_filter( _("Select gun to modify:" ), [&used]( const item& e ) {
             return e.gunmod_compatible( *used, false, false );
-        } );
+        }, _( "You don't have compatible guns." ) );
 
         if( gunpos == INT_MIN ) {
             add_msg_if_player( m_info, _( "Never mind." ) );
@@ -10695,7 +10749,7 @@ bool player::gunmod_remove( item &gun, item& mod )
         return false;
     }
 
-    gun.set_gun_mode( "NULL" );
+    gun.gun_set_mode( "DEFAULT" );
     moves -= mod.type->gunmod->install_time / 2;
 
     i_add_or_drop( mod );
@@ -10716,7 +10770,7 @@ void player::gunmod_add( item &gun, item &mod )
     }
 
     // first check at least the minimum requirements are met
-    if( !can_use( mod ) ) {
+    if( !( can_use( mod ) || has_trait( "DEBUG_HS" ) ) ) {
         return;
     }
 
@@ -10728,7 +10782,7 @@ void player::gunmod_add( item &gun, item &mod )
     int qty = 0;
 
     // Mods with INSTALL_DIFFICULT have a chance to fail, potentially damaging the gun
-    if( mod.has_flag( "INSTALL_DIFFICULT" ) ) {
+    if( mod.has_flag( "INSTALL_DIFFICULT" ) && !has_trait( "DEBUG_HS" ) ) {
         int chances = 1; // start with 1 in 6 (~17% chance)
 
         for( const auto &sk : mod.type->min_skills ) {
@@ -10804,8 +10858,9 @@ void player::gunmod_add( item &gun, item &mod )
         actions[ prompt.ret ]();
     }
 
-    assign_activity( ACT_GUNMOD_ADD, mod.type->gunmod->install_time, -1, get_item_position( &gun ),
-                     tool );
+    int turns = !has_trait( "DEBUG_HS" ) ? mod.type->gunmod->install_time : 0;
+
+    assign_activity( ACT_GUNMOD_ADD, turns, -1, get_item_position( &gun ), tool );
     activity.values.push_back( get_item_position( &mod ) );
     activity.values.push_back( roll ); // chance of success (%)
     activity.values.push_back( risk ); // chance of damage (%)
@@ -10826,7 +10881,13 @@ hint_rating player::rate_action_read( const item &it ) const
         if (rl_dist( elem->pos(), g->u.pos() ) < PICKUP_RANGE && elem->is_friend()) {
             ///\EFFECT_INT_NPC allows NPCs to read harder books for you
             if ((elem->int_cur+1) >= it.type->book->intel) {
-                assistants++;
+                if ( elem->in_sleep_state() ) {
+                    //Sleeping NPCs would need to be awoken first...
+                    //Tell the player about it.
+                    add_msg(m_info, _("%s could read this to you, if they were awake..."), elem->name.c_str());
+                } else {
+                    assistants++;
+                }
             }
        }
     }
@@ -12008,6 +12069,7 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
 
             if( armor_absorb( elem, armor ) ) {
                 armor_destroyed = true;
+                armor.on_takeoff( *this );
                 worn_remains.insert( worn_remains.end(), armor.contents.begin(), armor.contents.end() );
                 // decltype is the typename of the iterator, ote that reverse_iterator::base returns the
                 // iterator to the next element, not the one the revers_iterator points to.
@@ -12575,8 +12637,10 @@ std::string player::weapname() const
 
         // Is either the base item or at least one auxiliary gunmod loaded (includes empty magazines)
         bool base = weapon.ammo_capacity() > 0 && !weapon.has_flag( "RELOAD_AND_SHOOT" );
-        bool aux = std::any_of( weapon.contents.begin(), weapon.contents.end(), [&]( const item& e ) {
-            return e.is_auxiliary_gunmod() && e.ammo_capacity() > 0 && !e.has_flag( "RELOAD_AND_SHOOT" );
+
+        const auto mods = weapon.gunmods();
+        bool aux = std::any_of( mods.begin(), mods.end(), [&]( const item *e ) {
+            return e->is_gun() && e->ammo_capacity() > 0 && !e->has_flag( "RELOAD_AND_SHOOT" );
         } );
 
         if( base || aux ) {
@@ -12591,11 +12655,11 @@ std::string player::weapname() const
             }
             str << ")";
 
-            for( const auto& mod : weapon.contents ) {
-                if( mod.is_auxiliary_gunmod() && mod.ammo_capacity() > 0 && !mod.has_flag( "RELOAD_AND_SHOOT" ) ) {
-                    str << " (" << mod.ammo_remaining();
-                    if( mod.magazine_integral() ) {
-                        str << "/" << mod.ammo_capacity();
+            for( auto e : mods ) {
+                if( e->is_gun() && e->ammo_capacity() > 0 && !e->has_flag( "RELOAD_AND_SHOOT" ) ) {
+                    str << " (" << e->ammo_remaining();
+                    if( e->magazine_integral() ) {
+                        str << "/" << e->ammo_capacity();
                     }
                     str << ")";
                 }
@@ -12604,7 +12668,7 @@ std::string player::weapname() const
         return str.str();
 
     } else if( weapon.is_container() && weapon.contents.size() == 1 ) {
-        return string_format( "%s (%d)", weapon.tname().c_str(), weapon.contents[0].charges );
+        return string_format( "%s (%d)", weapon.tname().c_str(), weapon.contents.front().charges );
 
     } else if( weapon.is_null() ) {
         return _( "fists" );
@@ -12635,7 +12699,8 @@ bool player::wield_contents( item *container, int pos, int factor, bool effects 
         return false;
     }
 
-    if( !can_wield( container->contents[pos] ) ) {
+    auto target = std::next( container->contents.begin(), pos );
+    if( !can_wield( *target ) ) {
         return false;
     }
 
@@ -12648,10 +12713,11 @@ bool player::wield_contents( item *container, int pos, int factor, bool effects 
         inv.unsort();
     }
 
-    weapon = container->contents[pos];
+    weapon = std::move( *target );
+    container->contents.erase( target );
+
     inv.assign_empty_invlet( weapon, true );
     last_item = itype_id( weapon.type->id );
-    container->contents.erase( container->contents.begin() + pos );
 
     ///\EFFECT_PISTOL decreases time taken to draw pistols from holsters
     ///\EFFECT_SMG decreases time taken to draw smgs from holsters
@@ -12963,19 +13029,6 @@ void player::burn_move_stamina( int moves )
             mod_pain(1);
         }
     }
-}
-
-field_id player::playerBloodType() const
-{
-    if (has_trait("ACIDBLOOD"))
-        return fd_acid;
-    if (has_trait("THRESH_PLANT"))
-        return fd_blood_veggy;
-    if (has_trait("THRESH_INSECT") || has_trait("THRESH_SPIDER"))
-        return fd_blood_insect;
-    if (has_trait("THRESH_CEPHALOPOD"))
-        return fd_blood_invertebrate;
-    return fd_blood;
 }
 
 Creature::Attitude player::attitude_to( const Creature &other ) const
@@ -13408,7 +13461,7 @@ int player::add_ammo_to_worn_quiver( item &ammo )
         int stored = quiver->quiver_store_arrow( ammo);
         if( stored > 0) {
             add_msg_if_player( ngettext( "You store %1$d %2$s in your %3$s.", "You store %1$d %2$s in your %3$s.", stored),
-                               stored, quiver->contents[0].type_name(stored).c_str(), quiver->type_name().c_str());
+                               stored, quiver->contents.front().type_name(stored).c_str(), quiver->type_name().c_str());
         }
         moves -= std::min( 100, stored * move_cost_per_arrow);
         quivered_sum += stored;
@@ -13456,7 +13509,7 @@ std::vector<const item *> player::all_items_with_flag( const std::string flag ) 
     } );
 }
 
-bool player::has_item_with_flag( std::string flag ) const
+bool player::has_item_with_flag( const std::string &flag ) const
 {
     return has_item_with( [&flag]( const item & it ) {
         return it.has_flag( flag );

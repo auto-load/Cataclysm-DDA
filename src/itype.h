@@ -19,6 +19,7 @@
 
 // see item.h
 class item_category;
+class Item_factory;
 struct recipe;
 struct itype;
 class Skill;
@@ -36,6 +37,8 @@ typedef std::string itype_id;
 typedef std::string ammotype;
 class fault;
 using fault_id = string_id<fault>;
+struct quality;
+using quality_id = string_id<quality>;
 
 enum bigness_property_aspect : int {
     BIGNESS_WHEEL_DIAMETER      // wheel size in inches, including tire
@@ -72,16 +75,16 @@ struct islot_comestible
     long def_charges = 1;
 
     /** effect on character thirst (may be negative) */
-    int quench = 0; 
+    int quench = 0;
 
     /** effect on character nutrition (may be negative) */
     int nutr = 0;
 
     /** turns until becomes rotten, or zero if never spoils */
-    int spoils = 0; 
+    int spoils = 0;
 
     /** addiction potential */
-    int addict = 0; 
+    int addict = 0;
 
     /** effects of addiction */
     add_type add = ADD_NULL;
@@ -288,10 +291,6 @@ struct common_firing_data : common_ranged_data {
      * A value of -1 in gunmods means it's ignored.
      */
     int aim_speed = 0;
-    /**
-     * Burst size.
-     */
-    int burst = 0;
 
     /** Modifies base loudness as provided by the currently loaded ammo */
     int loudness = 0;
@@ -299,11 +298,16 @@ struct common_firing_data : common_ranged_data {
 
 struct islot_engine
 {
-    /** for combustion engines the displacement (cc) */
-    int displacement = 0;
+    friend Item_factory;
+    friend item;
 
-    /** What faults (if any) can occur */
-    std::set<fault_id> faults;
+    public:
+        /** for combustion engines the displacement (cc) */
+        int displacement = 0;
+
+    private:
+        /** What faults (if any) can occur */
+        std::set<fault_id> faults;
 };
 
 // TODO: this shares a lot with the ammo item type, merge into a separate slot type?
@@ -362,6 +366,12 @@ struct islot_gun : common_firing_data {
     *Default mods, string is id of mod. These mods are removable but are default on the weapon.
     */
     std::set<itype_id> default_mods;
+
+    /** Firing modes are supported by the gun. Always contains at least DEFAULT mode */
+    std::map<std::string, std::pair<std::string, int>> modes;
+
+    /** Burst size for AUTO mode (legacy field for items not migrated to specify modes ) */
+    int burst = 0;
 };
 
 struct islot_gunmod : common_firing_data {
@@ -385,6 +395,9 @@ struct islot_gunmod : common_firing_data {
 
     /** If non-empty replaces the compatible magazines for the base gun */
     std::map< ammotype, std::set<itype_id> > magazine_adaptor;
+
+    /** Firing modes added to or replacing those of the base gun */
+    std::map<std::string, std::pair<std::string, int>> mode_modifier;
 };
 
 struct islot_magazine {
@@ -555,7 +568,7 @@ public:
 
     std::string default_container = "null"; // The container it comes in
 
-    std::map<std::string, int> qualities; //Tool quality indicators
+    std::map<quality_id, int> qualities; //Tool quality indicators
     std::map<std::string, std::string> properties;
 
     // What we're made of (material names). .size() == made of nothing.

@@ -40,14 +40,14 @@
         "target": "electric_lantern",
         "msg": "The lantern is extinguished."
     },
-    "flags": [ "LIGHT_15" ]
+    "flags": [ "LIGHT_15", "TRADER_AVOID" ]
   },
   {
     "id": "flashlight",
     "type": "TOOL",
     "name": "flashlight (off)",
     "name_plural": "flashlights (off)",
-    "description": "This is a typical household flashlight with a plastic handle. Using this flashlight will turn it on and provide light, assuming it is charged with batteries.",
+    "description": "This is a typical household flashlight with a plastic handle.  Using this flashlight will turn it on and provide light, assuming it is charged with batteries.",
     "material": [ "plastic", "aluminum" ],
     "symbol": ";",
     "color": "blue",
@@ -80,14 +80,14 @@
         "msg": "You turn the flashlight off.",
         "target": "flashlight"
     },
-    "flags": [ "LIGHT_300", "CHARGEDIM" ]
+    "flags": [ "LIGHT_300", "CHARGEDIM", "TRADER_AVOID" ]
   },
   {
     "id": "heavy_flashlight",
     "type": "TOOL",
     "name": "heavy duty flashlight (off)",
     "name_plural": "heavy duty flashlights (off)",
-    "description": "This is a heavy duty tubular aluminum LED flashlight as often used by security guards. Makes for a passable melee weapon. Using this flashlight will turn it on and provide light, assuming it is charged with batteries.",
+    "description": "This is a heavy duty tubular aluminum LED flashlight as often used by security guards.  Makes for a passable melee weapon.  Using this flashlight will turn it on and provide light, assuming it is charged with batteries.",
     "weight": 650,
     "volume": 3,
     "price": 950,

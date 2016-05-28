@@ -116,6 +116,7 @@
     "id" : "guns_smg_obscure",
     "//" : "Imported or otherwise very SMGs.",
     "items": [
+      [ "ppsh", 150 ],
       [ "skorpion_61", 100 ],
       [ "skorpion_82", 100 ]
     ]
@@ -186,6 +187,7 @@
       [ "rm51_assault_rifle", 25 ],
       [ "rm614_lmg", 10 ],
       [ "rm88_battle_rifle", 25 ],
+      [ "sig552", 100 ],
       [ "scar_l", 50 ],
       [ "scar_h", 50 ]
     ]
@@ -201,7 +203,8 @@
       [ "carbine_flintlock", 140 ],
       [ "rifle_flintlock", 180 ],
       [ "steyr_aug", 40 ],
-      [ "trex_gun", 60 ]
+      [ "trex_gun", 60 ],
+      [ "arx160", 40 ]
     ]
   },
   {

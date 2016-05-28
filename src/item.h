@@ -37,6 +37,8 @@ class Skill;
 using skill_id = string_id<Skill>;
 class fault;
 using fault_id = string_id<fault>;
+struct quality;
+using quality_id = string_id<quality>;
 
 enum damage_type : int;
 
@@ -474,7 +476,7 @@ class item : public JsonSerializer, public JsonDeserializer, public visitable<it
     void add_rain_to_container(bool acid, int charges = 1);
     /*@}*/
 
-    int get_quality( const std::string &quality_id ) const;
+    int get_quality( const quality_id &id ) const;
     bool count_by_charges() const;
     bool craft_has_charges();
 
@@ -645,7 +647,7 @@ public:
      * for other players. The player is identified by its id.
      */
     void mark_as_used_by_player(const player &p);
-    /** Marks the item as filthy, so characters with squeamish trait can't wear it. 
+    /** Marks the item as filthy, so characters with squeamish trait can't wear it.
     */
     bool is_disgusting_for( const player &p ) const;
     /**
@@ -725,6 +727,9 @@ public:
 
     bool is_faulty() const;
 
+    /** What faults can potentially occur with this item? */
+    std::set<fault_id> faults_potential() const;
+
     /**
      * Can this item have given item/itype as content?
      *
@@ -778,7 +783,7 @@ public:
 
  itype_id typeId() const;
  const itype* type;
- std::vector<item> contents;
+ std::list<item> contents;
 
         /**
          * Unloads the item's contents.
@@ -815,15 +820,15 @@ public:
          */
         void set_curammo( const item &ammo );
         /**
-         * Callback when a player starts wearing the item. The item is already in the worn
+         * Callback when a character starts wearing the item. The item is already in the worn
          * items vector and is called from there.
          */
-        void on_wear( player &p );
+        void on_wear( Character &p );
         /**
-         * Callback when a player takes off an item. The item is still in the worn items
+         * Callback when a character takes off an item. The item is still in the worn items
          * vector but will be removed immediately after the function returns
          */
-        void on_takeoff (player &p);
+        void on_takeoff( Character &p );
         /**
          * Callback when a player starts wielding the item. The item is already in the weapon
          * slot and is called from there.
@@ -1192,14 +1197,6 @@ public:
         item * gunmod_find( const itype_id& mod );
         const item * gunmod_find( const itype_id& mod ) const;
 
-        /**
-         * Returns currently active auxiliary (@ref is_auxiliary_gunmod) gun mod item.
-         * May return null if there is no such gun mod or if the gun is not in the
-         * auxiliary mode (@ref is_in_auxiliary_mode).
-         */
-        item * gunmod_current();
-        item const * gunmod_current() const;
-
         /*
          * Checks if mod can be applied to this item considering any current state (jammed, loaded etc.)
          * @param alert whether to display message describing reason for any incompatibility
@@ -1207,10 +1204,40 @@ public:
          */
         bool gunmod_compatible( const item& mod, bool alert = true, bool effects = true ) const;
 
-        /**
-         * Burst size (see ranged.cpp), includes effects from installed gunmods.
-         */
-        int burst_size() const;
+        struct gun_mode {
+            std::string mode; /** name of this mode */
+            item *target;     /** pointer to base gun or attached gunmod */
+            int qty;          /** burst size or melee range */
+            bool melee;       /** if true perform a melee attach as opposed to shooting */
+
+            operator bool() const { return target != nullptr; }
+
+            item &operator*() { return *target; }
+            const item &operator*() const { return *target; }
+
+            item *operator->() { return target; }
+            const item *operator->() const { return target; }
+        };
+
+        /** Get all possible modes for this gun inclusive of any attached gunmods */
+        std::map<std::string, const item::gun_mode> gun_all_modes() const;
+
+        /** Check if gun supports a specific mode returning an invalid/empty mode if not */
+        const gun_mode gun_get_mode( const std::string& mode ) const;
+
+        /** Get the current mode for this gun (or an invalid mode if item is not a gun) */
+        gun_mode gun_current_mode();
+        const gun_mode gun_current_mode() const;
+
+        /** Get id of mode a gun is currently set to, eg. DEFAULT, AUTO, BURST */
+        std::string gun_get_mode_id() const;
+
+        /** Try to set the mode for a gun, returning false if no such mode is possible */
+        bool gun_set_mode( const std::string& mode );
+
+        /** Switch to the next available firing mode */
+        void gun_cycle_mode();
+
         /** Aim speed. See ranged.cpp */
         int aim_speed( int aim_threshold ) const;
         /** We use the current aim level to decide which sight to use. */
@@ -1228,32 +1255,7 @@ public:
         sound_data gun_noise( bool burst = false ) const;
         /** Whether this is a (nearly) silent gun (a tiny bit of sound is allowed). Non-guns are always silent. */
         bool is_silent() const;
-        /**
-         * Auxiliary gun mod: a gunmod that can be fired instead of the actual gun.
-         * Example: underslug shotgun.
-         */
-        bool is_auxiliary_gunmod() const;
-        /**
-         * Same as @code get_gun_mode() == "MODE_AUX" @endcode
-         */
-        bool is_in_auxiliary_mode() const;
-        /**
-         * Same as @code set_gun_mode("MODE_AUX") @endcode
-         */
-        void set_auxiliary_mode();
-        /**
-         * Get the gun mode, e.g. BURST, or MODE_AUX, or something else.
-         */
-        std::string get_gun_mode() const;
-        /**
-         * Set the gun mode (see @ref get_gun_mode).
-         */
-        void set_gun_mode( const std::string &mode );
-        /**
-         * If this item is a gun with several firing mods (including auxiliary gunmods), switch
-         * to the next mode. Otherwise, make nothing at all.
-         */
-        void next_mode();
+
         /**
          * The weapons range in map squares. If the item has an active gunmod, it returns the range
          * of that gunmod, the guns range is returned only when the item has no active gunmod.

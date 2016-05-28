@@ -1076,7 +1076,7 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
         // TODO: this ignores the z-component
         const tripoint player_pos = p->global_omt_location();
         int dist = rl_dist(player_pos, p->goal);
-        std::stringstream response;
+        std::ostringstream response;
         dist *= 100;
         if (dist >= 1300) {
         int miles = dist / 25; // *100, e.g. quarter mile is "25"
@@ -4402,7 +4402,7 @@ enum consumption_result {
 consumption_result try_consume( npc &p, item &it, std::string &reason )
 {
     bool consuming_contents = it.is_food_container( &p );
-    item &to_eat = consuming_contents ? it.contents[0] : it;
+    item &to_eat = consuming_contents ? it.contents.front() : it;
     const auto comest = to_eat.type->comestible.get();
     if( comest == nullptr ) {
         // Don't inform the player that we don't want to eat the lighter
@@ -4465,7 +4465,7 @@ consumption_result try_consume( npc &p, item &it, std::string &reason )
 
 std::string give_item_to( npc &p, bool allow_use, bool allow_carry )
 {
-    const int inv_pos = g->inv( _("Offer what?") );
+    const int inv_pos = g->inv_for_all( _( "Offer what?" ), _( "You have no items to offer." ) );
     item &given = g->u.i_at( inv_pos );
     if( given.is_null() ) {
         return _("Changed your mind?");

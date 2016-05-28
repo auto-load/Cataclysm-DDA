@@ -3281,10 +3281,6 @@ void map::smash_items(const tripoint &p, const int power)
         // 10 * 20 / 40 = 5 vs 1
         // 5 damage (destruction)
 
-        field_id type_blood = fd_null;
-        if( i->is_corpse() ) {
-            type_blood = i->get_mtype()->bloodType();
-        }
         const bool by_charges = i->count_by_charges();
         // See if they were damaged
         if( by_charges ) {
@@ -3297,17 +3293,12 @@ void map::smash_items(const tripoint &p, const int power)
                 damage_chance -= material_factor;
             }
         } else {
+            const field_id type_blood = i->is_corpse() ? i->get_mtype()->bloodType() : fd_null;
             while( ( damage_chance > material_factor ||
                      x_in_y( damage_chance, material_factor ) ) &&
-                   i->damage < MAX_ITEM_DAMAGE ) {
+                     i->damage < MAX_ITEM_DAMAGE ) {
                 i->damage++;
-                if( type_blood != fd_null ) {
-                    for( const tripoint &pt : points_in_radius( p, 1 ) ) {
-                        if( !one_in(damage_chance) ) {
-                            g->m.add_field( pt, type_blood, 1, 0 );
-                        }
-                    }
-                }
+                add_splash( type_blood, p, 1, damage_chance );
                 damage_chance -= material_factor;
             }
         }
@@ -3833,7 +3824,7 @@ void map::shoot( const tripoint &p, projectile &proj, const bool hit_items )
     int vpart;
     vehicle *veh = veh_at(p, vpart);
     if( veh != nullptr ) {
-        dam = veh->damage( vpart, dam, inc ? DT_HEAT : DT_BASH, hit_items );
+        dam = veh->damage( vpart, dam, inc ? DT_HEAT : DT_STAB, hit_items );
     }
 
     ter_id terrain = ter( p );
@@ -4712,7 +4703,7 @@ item &map::add_item_at( const tripoint &p,
     if( new_item.has_flag("ACT_IN_FIRE") && get_field( p, fd_fire ) != nullptr ) {
         new_item.active = true;
     }
-    
+
     int lx, ly;
     submap * const current_submap = get_submap_at( p, lx, ly );
     current_submap->is_uniform = false;
@@ -4729,11 +4720,11 @@ item &map::add_item_at( const tripoint &p,
 item map::water_from(const tripoint &p)
 {
     if( has_flag( "SALT_WATER", p ) ) {
-        item ret( "salt_water", 0 );
+        item ret( "salt_water", 0, std::numeric_limits<int>::max() );
         return ret;
     }
 
-    item ret( "water", 0 );
+    item ret( "water", 0, std::numeric_limits<int>::max() );
     if( ter( p ) == t_water_sh && one_in( 3 ) ) {
         ret.poison = rng(1, 4);
     } else if( ter( p ) == t_water_dp && one_in( 4 ) ) {
@@ -4814,7 +4805,7 @@ static void process_vehicle_items( vehicle *cur_veh, int part )
                 if( cur_veh->discharge_battery( 10, false ) ) {
                     break; // Check car's power before charging
                 }
-                n.charges++;
+                n.ammo_set( "battery", n.ammo_remaining() + 1 );
             }
         }
     }
@@ -5300,8 +5291,7 @@ static bool trigger_radio_item( item_stack &items, std::list<item>::iterator &n,
                                 std::string signal )
 {
     bool trigger_item = false;
-    // Check for charges != 0 not >0, so that -1 charge tools can still be used
-    if( n->charges != 0 && n->has_flag("RADIO_ACTIVATION") && n->has_flag(signal) ) {
+    if( n->has_flag("RADIO_ACTIVATION") && n->has_flag(signal) ) {
         sounds::sound(pos, 6, _("beep."));
         if( n->has_flag("RADIO_INVOKE_PROC") ) {
             // Invoke twice: first to transform, then later to proc
@@ -5314,10 +5304,10 @@ static bool trigger_radio_item( item_stack &items, std::list<item>::iterator &n,
         }
         trigger_item = true;
     } else if( n->has_flag("RADIO_CONTAINER") && !n->contents.empty() &&
-               n->contents[0].has_flag( signal ) ) {
+               n->contents.front().has_flag( signal ) ) {
         // A bomb is the only thing meaningfully placed in a container,
         // If that changes, this needs logic to handle the alternative.
-        itype_id bomb_type = n->contents[0].type->id;
+        itype_id bomb_type = n->contents.front().type->id;
 
         n->convert( bomb_type );
         if( n->has_flag("RADIO_INVOKE_PROC") ) {
@@ -5584,15 +5574,17 @@ bool map::add_field(const tripoint &p, const field_id t, int density, const int 
         return false;
     }
 
-    if( density > 3) {
-        density = 3;
-    }
-
+    density = std::min( density, MAX_FIELD_DENSITY );
     if( density <= 0) {
         return false;
     }
 
     int lx, ly;
+
+    if( t == fd_null ) {
+        return false;
+    }
+
     submap *const current_submap = get_submap_at( p, lx, ly );
     current_submap->is_uniform = false;
 
@@ -5641,6 +5633,61 @@ void map::remove_field( const tripoint &p, const field_id field_to_remove )
                 set_pathfinding_cache_dirty( p.z );
                 break;
             }
+        }
+    }
+}
+
+void map::add_splatter( const field_id type, const tripoint &where, int intensity )
+{
+    if( intensity <= 0 ) {
+        return;
+    }
+    if( type == fd_blood || type == fd_gibs_flesh ) { // giblets are also good for painting
+        int anchor_part = -1;
+        vehicle* veh = veh_at( where, anchor_part );
+        if( veh != nullptr ) {
+            const int part = veh->part_displayed_at( veh->parts[anchor_part].mount.x,
+                                                     veh->parts[anchor_part].mount.y );
+            veh->parts[part].blood += 200 * std::min( intensity, 3 ) / 3;
+            return;
+        }
+    }
+    adjust_field_strength( where, type, intensity );
+}
+
+void map::add_splatter_trail( const field_id type, const tripoint &from, const tripoint &to )
+{
+    if( type == fd_null ) {
+        return;
+    }
+    const auto trail = line_to( from, to );
+    int remainder = trail.size();
+    for( const auto &elem : trail ) {
+        add_splatter( type, elem );
+        remainder--;
+        if( impassable( elem ) ) { // Blood splatters stop at walls.
+            add_splatter( type, elem, remainder );
+            return;
+        }
+    }
+}
+
+void map::add_splatter_trail( const field_id type, const std::vector<tripoint> &trajectory, int length )
+{
+    if( length > 0 && !trajectory.empty() ) {
+        add_splatter_trail( type, trajectory.back(), shift_line_end( trajectory, length - 1 ) );
+    }
+}
+
+void map::add_splash( const field_id type, const tripoint &center, int radius, int density )
+{
+    if( type == fd_null ) {
+        return;
+    }
+    // TODO: use bresenham here and take obstacles into account
+    for( const tripoint &pnt : points_in_radius( center, radius ) ) {
+        if( trig_dist( pnt, center ) <= radius && !one_in( density ) ) {
+            add_splatter( type, pnt );
         }
     }
 }
