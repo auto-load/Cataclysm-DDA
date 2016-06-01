@@ -2774,6 +2774,7 @@ bool game::handle_action()
 
         case ACTION_ORGANIZE:
             reassign_item();
+            refresh_all();
             break;
 
         case ACTION_USE:
@@ -3133,6 +3134,7 @@ bool game::handle_action()
                     uquit = QUIT_SUICIDE;
                 }
             }
+            refresh_all();
             break;
 
         case ACTION_SAVE:
@@ -3142,6 +3144,7 @@ bool game::handle_action()
                     uquit = QUIT_SAVED;
                 }
             }
+            refresh_all();
             break;
 
         case ACTION_QUICKSAVE:
@@ -3159,7 +3162,7 @@ bool game::handle_action()
 
         case ACTION_MAP:
             #ifdef TILES
-            invalidate_overmap_framebuffer();
+            invalidate_all_framebuffers();
             #endif // TILES
             draw_overmap();
             break;
@@ -3761,115 +3764,6 @@ bool game::save_player_data()
     return saved_data && saved_weather && saved_log;
 }
 
-void game::dump_stats( const std::string& what )
-{
-    load_core_data();
-    DynamicDataLoader::get_instance().finalize_loaded_data();
-
-    if( what == "GUN" ) {
-        std::cout
-            << "Name" << "\t"
-            << "Ammo" << "\t"
-            << "Volume" << "\t"
-            << "Weight" << "\t"
-            << "Capacity" << "\t"
-            << "Range" << "\t"
-            << "Dispersion" << "\t"
-            << "Recoil" << "\t"
-            << "Damage" << "\t"
-            << "Pierce" << std::endl;
-
-        auto dump = []( const item& gun ) {
-            std::cout
-                << gun.tname( false ) << "\t"
-                << ( gun.ammo_type() != "NULL" ? gun.ammo_type() : "" ) << "\t"
-                << gun.volume() << "\t"
-                << gun.weight() << "\t"
-                << gun.ammo_capacity() << "\t"
-                << gun.gun_range() << "\t"
-                << gun.gun_dispersion() << "\t"
-                << gun.gun_recoil() << "\t"
-                << gun.gun_damage() << "\t"
-                << gun.gun_pierce() << std::endl;
-        };
-
-        for( auto& e : item_controller->get_all_itypes() ) {
-            if( e.second->gun.get() ) {
-                item gun( e.first );
-                if( gun.is_reloadable() ) {
-                    gun.ammo_set( default_ammo( gun.ammo_type() ), gun.ammo_capacity() );
-                }
-                dump( gun );
-
-                if( gun.type->gun->barrel_length > 0 ) {
-                    gun.emplace_back( "barrel_small" );
-                    dump( gun );
-                }
-            }
-        }
-    } else if( what == "AMMO" ) {
-        std::cout
-            << "Name" << "\t"
-            << "Ammo" << "\t"
-            << "Volume" << "\t"
-            << "Weight" << "\t"
-            << "Stack" << "\t"
-            << "Range" << "\t"
-            << "Dispersion" << "\t"
-            << "Recoil" << "\t"
-            << "Damage" << "\t"
-            << "Pierce" << std::endl;
-
-        auto dump = []( const item& ammo ) {
-            std::cout
-                << ammo.tname( false ) << "\t"
-                << ammo.type->ammo->type << "\t"
-                << ammo.volume() << "\t"
-                << ammo.weight() << "\t"
-                << ammo.type->stack_size << "\t"
-                << ammo.type->ammo->range << "\t"
-                << ammo.type->ammo->dispersion << "\t"
-                << ammo.type->ammo->recoil << "\t"
-                << ammo.type->ammo->damage << "\t"
-                << ammo.type->ammo->pierce << std::endl;
-        };
-
-        for( auto& e : item_controller->get_all_itypes() ) {
-            if( e.second->ammo.get() ) {
-                dump( item( e.first, calendar::turn, item::solitary_tag {} ) );
-            }
-        }
-    } else if( what == "VEHICLE" ) {
-        std::cout
-            << "Name" << "\t"
-            << "Weight (empty)" << "\t"
-            << "Weight (fueled)" << std::endl;
-
-        for( auto& e : vehicle_prototype::get_all() ) {
-            auto veh_empty = vehicle( e, 0, 0 );
-            auto veh_fueled = vehicle( e, 100, 0 );
-            std::cout
-                << veh_empty.name << "\t"
-                << veh_empty.total_mass() << "\t"
-                << veh_fueled.total_mass() << std::endl;
-        }
-    } else if( what == "VPART" ) {
-        std::cout
-            << "Name" << "\t"
-            << "Location" << "\t"
-            << "Weight" << "\t"
-            << "Size" << std::endl;
-
-        for( const auto e : vpart_info::get_all() ) {
-            std::cout
-                << e->name() << "\t"
-                << e->location << "\t"
-                << ceil( item( e->item ).weight() / 1000.0 ) << "\t"
-                << e->size << std::endl;
-        }
-    }
-}
-
 bool game::save()
 {
     try {
@@ -4075,6 +3969,7 @@ void game::debug()
                        NULL );
     int veh_num;
     std::vector<std::string> opts;
+    refresh_all();
     switch( action ) {
         case 1:
             wishitem( &u );
@@ -5509,6 +5404,9 @@ void game::draw_ter( const tripoint &center, const bool looking, const bool draw
         draw_critter( *n, center );
     }
 
+    // Draw player last
+    draw_critter( u, center );
+
     if( u.has_active_bionic("bio_scent_vision") && u.view_offset.z == 0 ) {
         tripoint tmp = center;
         int &realx = tmp.x;
@@ -5594,7 +5492,7 @@ void game::refresh_all()
     }
 
     #ifdef TILES
-    invalidate_map_framebuffer();
+    invalidate_all_framebuffers();
     clear_window_area( w_terrain );
     #endif // TILES
     draw();
@@ -6482,14 +6380,20 @@ void game::monmove()
                 // Count every time we exit npc::move() without spending any moves.
                 turns++;
             }
+
+            // Turn on debug mode when in infinite loop
+            // It has to be done before the last turn, otherwise
+            // there will be no meaningful debug output.
+            if( turns == 9 ) {
+                debugmsg( "NPC %s entered infinite loop. Turning on debug mode",
+                          np->name.c_str() );
+                debug_mode = true;
+            }
         }
+
         // If we spun too long trying to decide what to do (without spending moves),
         // Invoke cranial detonation to prevent an infinite loop.
-        if( turns == 9 ) {
-            debugmsg( "NPC %s entered infinite loop. Turning on debug mode",
-                np->name.c_str() );
-            debug_mode = true;
-        } else if( turns == 10 ) {
+        if( turns == 10 ) {
             add_msg( _( "%s's brain explodes!" ), np->name.c_str() );
             np->die( nullptr );
         }
@@ -7419,7 +7323,7 @@ void game::close( const tripoint &closep )
         }
     } else if( closep == u.pos() ) {
         add_msg(m_info, _("There's some buffoon in the way!"));
-    } else if (m.has_furn(closep) && m.furn_at(closep).close.empty()) {
+    } else if( m.has_furn( closep ) && !m.furn_at( closep ).close ) {
         // check for open crate
         if (m.furn_at(closep).id == "f_crate_o") {
             add_msg(m_info, _("You'll need to construct a seal to close the crate!"));
@@ -8375,6 +8279,7 @@ void game::peek()
 {
     tripoint p = u.pos();
     if( !choose_adjacent( _("Peek where?"), p.x, p.y ) ) {
+        refresh_all();
         return;
     }
 
@@ -10636,6 +10541,7 @@ void game::drop_in_direction()
         return;
     }
 
+    refresh_all();
     make_drop_activity( ACT_DROP, dirp );
 }
 

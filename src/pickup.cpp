@@ -22,7 +22,10 @@
 
 struct pickup_count {
     bool pick = false;
+    //count is 0 if the whole stack is being picked up, nonzero otherwise.
     int count = 0;
+    //position in the copy of the player's inventory (in the function @ref pick_up).
+    int position = -1;
     explicit operator bool() const {
         return pick;
     }
@@ -662,7 +665,7 @@ void Pickup::pick_up( const tripoint &pos, int min )
         ctxt.register_action("HELP_KEYBINDINGS");
 
         int start = 0, cur_it;
-        int new_weight = g->u.weight_carried(), new_volume = g->u.volume_carried();
+        player pl_copy = g->u;
         bool update = true;
         mvwprintw(w_pickup, 0, 0, _("PICK UP"));
         int selected = 0;
@@ -753,16 +756,28 @@ void Pickup::pick_up( const tripoint &pos, int min )
 
             if( idx >= 0 && idx < (int)here.size()) {
                 if( getitem[idx] ) {
-                    if( getitem[idx].count != 0 && getitem[idx].count < here[idx].charges ) {
-                        item temp = here[idx];
-                        temp.charges = getitem[idx].count;
-                        new_weight -= temp.weight();
-                        new_volume -= temp.volume();
-                    } else {
-                        new_weight -= here[idx].weight();
-                        new_volume -= here[idx].volume();
+                    if(here[idx].count_by_charges()) {
+                        if(getitem[idx].count == 0) {
+                            pl_copy.inv.find_item(getitem[idx].position).charges -= here[idx].charges;
+                        }
+                        else {
+                            pl_copy.inv.find_item(getitem[idx].position).charges -= getitem[idx].count;
+                        }
                     }
-                }
+                    else {
+                        unsigned stack_size = pl_copy.inv.const_stack(getitem[idx].position).size();
+                        pl_copy.i_rem(getitem[idx].position);
+                        //if the stack_was emptied, removing the item invalidated later positions- fix them
+                        if(stack_size == 1) {
+                            for(unsigned i = 0; i < here.size(); i++) {
+                                if(getitem[i] && getitem[i].position > getitem[idx].position) {
+                                    getitem[i].position--;
+                                }
+                            }
+                        }
+                    }
+                } //end if getitem[idx]
+
                 if (itemcount != 0 || getitem[idx].count == 0) {
                     if (itemcount >= here[idx].charges || !here[idx].count_by_charges()) {
                         // Ignore the count if we pickup the whole stack anyway
@@ -781,16 +796,13 @@ void Pickup::pick_up( const tripoint &pos, int min )
                 }
 
                 if (getitem[idx]) {
+                    item temp = here[idx];
                     if (getitem[idx].count != 0 &&
                         getitem[idx].count < here[idx].charges) {
-                        item temp = here[idx];
                         temp.charges = getitem[idx].count;
-                        new_weight += temp.weight();
-                        new_volume += temp.volume();
-                    } else {
-                        new_weight += here[idx].weight();
-                        new_volume += here[idx].volume();
                     }
+                    item *added = &(pl_copy.i_add(temp));
+                    getitem[idx].position = pl_copy.inv.position_by_item(added);
                 } else {
                     getitem[idx].count = 0;
                 }
@@ -815,8 +827,8 @@ void Pickup::pick_up( const tripoint &pos, int min )
                     if (getitem[i]) {
                         count++;
                     } else {
-                        new_weight += here[i].weight();
-                        new_volume += here[i].volume();
+                        item *added = &(pl_copy.i_add(here[i]));
+                        getitem[i].position = pl_copy.inv.position_by_item(added);
                     }
                     getitem[i].pick = true;
                 }
@@ -824,8 +836,7 @@ void Pickup::pick_up( const tripoint &pos, int min )
                     for (size_t i = 0; i < here.size(); i++) {
                         getitem[i].pick = false;
                     }
-                    new_weight = g->u.weight_carried();
-                    new_volume = g->u.volume_carried();
+                    pl_copy = g->u;
                 }
                 update = true;
             }
@@ -893,12 +904,12 @@ void Pickup::pick_up( const tripoint &pos, int min )
                     mvwaddch(w_pickup, 0, i, ' ');
                 }
                 mvwprintz(w_pickup, 0,  9,
-                          (new_weight > g->u.weight_capacity() ? c_red : c_white),
-                          _("Wgt %.1f"), convert_weight(new_weight) + 0.05); // +0.05 to round up
+                          (pl_copy.weight_carried() > g->u.weight_capacity() ? c_red : c_white),
+                          _("Wgt %.1f"), convert_weight(pl_copy.weight_carried()) + 0.05); // +0.05 to round up
                 wprintz(w_pickup, c_white, "/%.1f", convert_weight(g->u.weight_capacity()));
                 mvwprintz(w_pickup, 0, 24,
-                          (new_volume > g->u.volume_capacity() ? c_red : c_white),
-                          _("Vol %d"), new_volume);
+                          (pl_copy.volume_carried() > g->u.volume_capacity() ? c_red : c_white),
+                          _("Vol %d"), pl_copy.volume_carried());
                 wprintz(w_pickup, c_white, "/%d", g->u.volume_capacity());
             }
             wrefresh(w_pickup);

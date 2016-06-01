@@ -151,6 +151,8 @@ const efftype_id effect_nausea( "nausea" );
 
 const matype_id style_none( "style_none" );
 
+const vitamin_id vitamin_iron( "iron" );
+
 // use this instead of having to type out 26 spaces like before
 static const std::string header_spaces( 26, ' ' );
 
@@ -1815,7 +1817,7 @@ bool player::is_immune_effect( const efftype_id &eff ) const
     } else if( eff == effect_deaf ) {
         return worn_with_flag("DEAF") || has_bionic("bio_ears") || is_wearing("rm13_armor_on");
     } else if( eff == effect_corroding ) {
-        return has_trait( "ACIDPROOF" );
+        return is_immune_damage( DT_ACID ) || has_trait( "SLIMY" ) || has_trait( "VISCOUS" );
     } else if( eff == effect_nausea ) {
         return has_trait( "STRONGSTOMACH" );
     }
@@ -6471,6 +6473,8 @@ void player::hardcoded_effects(effect &it)
         if ( one_in(6 / intense) && activity.type != ACT_FIRSTAID ) {
             add_msg_player_or_npc(m_bad, _("You lose some blood."),
                                            _("<npcname> loses some blood.") );
+            // Prolonged haemorrhage is a significant risk for developing anaemia
+            vitamin_mod( vitamin_iron, rng( -1, -4 ) );
             mod_pain(1);
             apply_damage( nullptr, bp, 1 );
             bleed();
@@ -6513,7 +6517,7 @@ void player::hardcoded_effects(effect &it)
                     _("\"Huh?  What was that?\"")
                 }};
 
-                const std::string &npc_text = random_entry( npc_hallu );
+                const std::string &npc_text = random_entry_ref( npc_hallu );
                 ///\EFFECT_STR_NPC increases volume of hallucination sounds (NEGATIVE)
 
                 ///\EFFECT_INT_NPC decreases volume of hallucination sounds
@@ -7954,24 +7958,30 @@ void player::suffer()
         }
     }
 
-    if( (has_trait("ALBINO") || has_effect( effect_datura )) &&
-        g->is_in_sunlight(pos()) && one_in(10) ) {
-        // Umbrellas and rain gear can also keep the sun off!
-        // (No, really, I know someone who uses an umbrella when it's sunny out.)
-        if (!((worn_with_flag("RAINPROOF")) || (weapon.has_flag("RAIN_PROTECT"))) ) {
-            add_msg(m_bad, _("The sunlight is really irritating."));
-            if (in_sleep_state()) {
+    if( ( has_trait( "ALBINO" ) || has_effect( effect_datura ) ) &&
+        g->is_in_sunlight( pos() ) && one_in(10) ) {
+        // Umbrellas can keep the sun off the skin and sunglasses - off the eyes.
+        if( !weapon.has_flag( "RAIN_PROTECT" ) ) {
+            add_msg( m_bad, _( "The sunlight is really irritating your skin." ) );
+            if( in_sleep_state() ) {
                 wake_up();
             }
-            if (one_in(10)) {
+            if( one_in(10) ) {
                 mod_pain(1);
             }
             else focus_pool --;
         }
+        if( !( ( (worn_with_flag( "SUN_GLASSES" ) ) || worn_with_flag( "BLIND" ) ) && ( wearing_something_on( bp_eyes ) ) ) ) {
+            add_msg( m_bad, _( "The sunlight is really irritating your eyes." ) );
+            if( one_in(10) ) {
+                mod_pain(1);
+            }
+            else focus_pool --;
+        }    
     }
 
     if (has_trait("SUNBURN") && g->is_in_sunlight(pos()) && one_in(10)) {
-        if (!((worn_with_flag("RAINPROOF")) || (weapon.has_flag("RAIN_PROTECT"))) ) {
+        if( !( weapon.has_flag( "RAIN_PROTECT" ) ) ) {
         add_msg(m_bad, _("The sunlight burns your skin!"));
         if (in_sleep_state()) {
             wake_up();
@@ -7981,7 +7991,7 @@ void player::suffer()
         }
     }
 
-    if ((has_trait("TROGLO") || has_trait("TROGLO2")) &&
+    if((has_trait("TROGLO") || has_trait("TROGLO2")) &&
         g->is_in_sunlight(pos()) && g->weather == WEATHER_SUNNY) {
         mod_str_bonus(-1);
         mod_dex_bonus(-1);
@@ -8001,7 +8011,7 @@ void player::suffer()
         mod_dex_bonus(-4);
         add_miss_reason(_("You can't stand the sunlight!"), 4);
         mod_int_bonus(-4);
-        mod_per_bonus(-4);
+        mod_per_bonus(-4); 
     }
 
     if (has_trait("SORES")) {
@@ -8012,23 +8022,11 @@ void player::suffer()
             }
         }
     }
-
-    if (has_trait("SLIMY") && !in_vehicle) {
-        g->m.add_field( pos(), fd_slime, 1, 0 );
-    }
         //Web Weavers...weave web
     if (has_active_mutation("WEB_WEAVER") && !in_vehicle) {
       g->m.add_field( pos(), fd_web, 1, 0 ); //this adds density to if its not already there.
 
      }
-
-    if (has_trait("VISCOUS") && !in_vehicle) {
-        if (one_in(3)){
-            g->m.add_field( pos(), fd_slime, 1, 0 );
-        } else {
-            g->m.add_field( pos(), fd_slime, 2, 0 );
-        }
-    }
 
     // Blind/Deaf for brief periods about once an hour,
     // and visuals about once every 30 min.
@@ -10012,7 +10010,7 @@ void player::mend_item( item_location&& obj, bool interactive )
             descr << "> " << calendar::print_duration( f.first->time() / 100 ) << "\n";
             descr << _( "<color_white>Skills:</color>\n" );
             for( const auto& e : f.first->skills() ) {
-                bool hasSkill = get_skill_level( skill_mechanics ) >= e.second;
+                bool hasSkill = get_skill_level( e.first ) >= e.second;
                 f.second -= !hasSkill;
                 descr << string_format( "> <color_%1$s>%2$s %3$i</color>\n", hasSkill ? "c_green" : "c_red",
                                         _( e.first.obj().name().c_str() ), e.second );
@@ -11930,6 +11928,10 @@ int player::get_armor_acid(body_part bp) const
         }
     }
 
+    if( has_trait( "VISCOUS" ) ) {
+        ret += 2;
+    }
+
     return ret;
 }
 
@@ -12225,6 +12227,11 @@ void player::absorb_hit(body_part bp, damage_instance &dam) {
             }
             if (has_trait("HOLLOW_BONES")) {
                 elem.amount *= 1.8;
+            }
+        }
+        if( elem.type == DT_ACID ) {
+            if( has_trait( "VISCOUS" ) ) {
+                elem.amount -= 2;
             }
         }
 
