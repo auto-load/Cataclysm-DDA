@@ -14,7 +14,7 @@ else
 fi
 
 if [[ -f cataclysm ]]; then
-    V_SHELL_SCRIPT="export PATH=${PATH} ${K_LIBRARY_PATH}=. ${K_FRAMEWORK_PATH}=.; cd '$PWD' && ./cataclysm; exit"
+    V_SHELL_SCRIPT="export PATH=${PATH} ${K_LIBRARY_PATH}=. ${K_FRAMEWORK_PATH}=.; cd '${PWD}' && ./cataclysm; exit"
     osascript -e "tell application \"Terminal\" to activate do script \"${V_SHELL_SCRIPT}\""
 else
     export ${K_LIBRARY_PATH}=. ${K_FRAMEWORK_PATH}=.
