@@ -51,13 +51,13 @@ script:
       make "${TCI_MAKE_OPTIONS[@]}"
       make "${TCI_MAKE_OPTIONS[@]}" app
       zip -r $TCI_DIR_APPS/CataclysmDDA-Mac-Graphics-$TRAVIS_TAG.zip *.app
-      openssl dgst -sha512 $TCI_DIR_APPS/*.zip | tee Checksum-Graphics-$TRAVIS_TAG.sha512.txt
+      openssl dgst -sha512 $TCI_DIR_APPS/*.zip | tee $TCI_DIR_APPS/Checksum-Graphics-$TRAVIS_TAG.sha512.txt
     else                
       TCI_MAKE_OPTIONS=(-j2 RELEASE=1 USE_HOME_DIR=1 NATIVE=osx CLANG=1 CACHE=1 LOCALIZE=1 LANGUAGES=all LUA=1 LUA_BINARY=luajit)
       make "${TCI_MAKE_OPTIONS[@]}"
       make "${TCI_MAKE_OPTIONS[@]}" app
       zip -r $TCI_DIR_APPS/CataclysmDDA-Mac-Terminal-$TRAVIS_TAG.zip *.app
-      openssl dgst -sha512 $TCI_DIR_APPS/*.zip | tee Checksum-Terminal-$TRAVIS_TAG.sha512.txt
+      openssl dgst -sha512 $TCI_DIR_APPS/*.zip | tee $TCI_DIR_APPS/Checksum-Terminal-$TRAVIS_TAG.sha512.txt
     fi
 
 deploy:
