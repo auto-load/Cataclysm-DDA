@@ -1022,7 +1022,7 @@ void cata_tiles::draw( int destx, int desty, const tripoint &center, int width, 
                              {g->ter_view_x, g->ter_view_y, center.z}, 0, 0, LL_LIT, false );
     }
     if( g->u.controlling_vehicle ) {
-        tripoint indicator_offset = g->get_veh_dir_indicator_location();
+        tripoint indicator_offset = g->get_veh_dir_indicator_location( true );
         if( indicator_offset != tripoint_min ) {
             draw_from_id_string( "cursor", C_NONE, empty_string,
                                  { indicator_offset.x + g->u.posx(),
@@ -1516,7 +1516,7 @@ bool cata_tiles::draw_from_id_string(std::string id, TILE_CATEGORY category,
             }
         } else if (category == C_ITEM) {
             const auto tmp = item( id, 0 );
-            sym = tmp.symbol();
+            sym = tmp.symbol().empty() ? ' ' : tmp.symbol().front();
             col = tmp.color();
         }
         // Special cases for walls

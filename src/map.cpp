@@ -32,6 +32,7 @@
 #include "weather.h"
 #include "item_group.h"
 #include "pathfinding.h"
+#include "scent_map.h"
 
 #include <cmath>
 #include <stdlib.h>
@@ -395,7 +396,6 @@ bool map::vehproceed()
     for( auto &vehs_v : vehs ) {
         if( vehs_v.v->of_turn > max_of_turn ) {
             cur_veh = vehs_v.v;
-            pt = tripoint( vehs_v.x, vehs_v.y, vehs_v.z );
             max_of_turn = cur_veh->of_turn;
         }
     }
@@ -406,7 +406,6 @@ bool map::vehproceed()
             vehicle &cveh = *vehs_v.v;
             if( cveh.falling ) {
                 cur_veh = vehs_v.v;
-                pt = tripoint( vehs_v.x, vehs_v.y, vehs_v.z );
                 break;
             }
         }
@@ -416,7 +415,12 @@ bool map::vehproceed()
         return false;
     }
 
-    vehicle &veh = *cur_veh;
+    return vehact( *cur_veh );
+}
+
+bool map::vehact( vehicle &veh )
+{
+    const tripoint pt = veh.global_pos3();
     if( !inbounds( pt ) ) {
         dbg( D_INFO ) << "stopping out-of-map vehicle. (x,y,z)=(" << pt.x << "," << pt.y << "," << pt.z << ")";
         veh.stop();
@@ -505,17 +509,12 @@ bool map::vehproceed()
             }
         }
     }
-    // One-tile step take some of movement
-    //  terrain cost is 1000 on roads.
-    // This is stupid btw, it makes veh magically seem
-    //  to accelerate when exiting rubble areas.
-    // TODO: Replicate this in vehicle::thrust and above in slowdown
-    const float ter_turn_cost = 1000.0f / std::max<float>( 0.0001f, traction * abs( veh.velocity ) );
+    const float turn_cost = 1000.0f / std::max<float>( 0.0001f, abs( veh.velocity ) );
 
     // Can't afford it this turn?
     // Low speed shouldn't prevent vehicle from falling, though
     bool falling_only = false;
-    if( ter_turn_cost >= veh.of_turn ) {
+    if( turn_cost >= veh.of_turn ) {
         if( !should_fall ) {
             veh.of_turn_carry = veh.of_turn;
             veh.of_turn = 0;
@@ -527,22 +526,32 @@ bool map::vehproceed()
 
     // Decrease of_turn if falling+moving, but not when it's lower than move cost
     if( !falling_only ) {
-        veh.of_turn -= ter_turn_cost;
+        veh.of_turn -= turn_cost;
     }
 
-    if( veh.skidding ) {
-        if( one_in( 4 ) ) { // might turn uncontrollably while skidding
-            veh.turn( one_in( 2 ) ? -15 : 15 );
+    if( one_in( 10 ) ) {
+        bool controlled = false;
+        // It can even be a NPC, but must be at the controls
+        for( int boarded : veh.boarded_parts() ) {
+            if( veh.part_with_feature( boarded, VPFLAG_CONTROLS, true ) >= 0 ) {
+                controlled = true;
+                player *passenger = veh.get_passenger( boarded );
+                if( passenger != nullptr ) {
+                    passenger->practice( skill_driving, 1 );
+                }
+            }
         }
-    ///\EFFECT_DRIVING reduces chance of fumbling vehicle controls
-    } else if( !should_fall && pl_ctrl && rng(0, 4) > g->u.get_skill_level( skill_driving ) && one_in(20) ) {
-        add_msg( m_warning, _("You fumble with the %s's controls."), veh.name.c_str() );
-        veh.turn( one_in( 2 ) ? -15 : 15 );
+
+        // Eventually send it skidding if no control
+        // But not if it's remotely controlled
+        if( !controlled && !pl_ctrl ) {
+            veh.skidding = true;
+        }
     }
-    // Eventually send it skidding if no control
-    // But not if it's remotely controlled
-    if( !pl_ctrl && veh.boarded_parts().empty() && one_in(10) ) {
-        veh.skidding = true;
+
+    if( veh.skidding && one_in( 4 )) {
+        // Might turn uncontrollably while skidding
+        veh.turn( one_in( 2 ) ? -15 : 15 );
     }
 
     if( should_fall ) {
@@ -615,7 +624,7 @@ bool map::vehicle_falling( vehicle &veh )
     return true;
 }
 
-float map::vehicle_traction( vehicle &veh ) const
+float map::vehicle_traction( const vehicle &veh ) const
 {
     const tripoint pt = veh.global_pos3();
     // TODO: Remove this and allow amphibious vehicles
@@ -633,8 +642,8 @@ float map::vehicle_traction( vehicle &veh ) const
     }
 
     int submerged_wheels = 0;
-    float traction_wheel_area = 0;
-    float total_wheel_area = 0;
+    float traction_wheel_area = 0.0f;
+    float total_wheel_area = 0.0f;
     for( int w = 0; w < num_wheels; w++ ) {
         const int p = wheel_indices[w];
         const tripoint pp = pt + veh.parts[p].precalc[0];
@@ -643,7 +652,7 @@ float map::vehicle_traction( vehicle &veh ) const
         //  this section will stay correct (ie. proportion of wheel area/total area)
         const int width = veh.part_info( p ).wheel_width;
         const int bigness = veh.parts[p].bigness;
-        const float wheel_area = width * bigness / 9.0f;
+        const float wheel_area = width * bigness;
         total_wheel_area += wheel_area;
 
         const auto &tr = ter_at( pp );
@@ -657,18 +666,25 @@ float map::vehicle_traction( vehicle &veh ) const
             continue;
         }
 
-        const int move_mod = move_cost_ter_furn( pp );
+        int move_mod = move_cost_ter_furn( pp );
         if( move_mod == 0 ) {
             // Vehicle locked in wall
             // Shouldn't happen, but does
             return 0.0f;
-        } else {
-            traction_wheel_area += 2 * wheel_area / move_mod;
         }
+
+        if( !tr.has_flag( "FLAT" ) ) {
+            // Wheels aren't as good as legs on rough terrain
+            move_mod += 4;
+        } else if( !tr.has_flag( "ROAD" ) ) {
+            move_mod += 2;
+        }
+
+        traction_wheel_area += 2 * wheel_area / move_mod;
     }
 
     // Submerged wheels threshold is 2/3.
-    if( num_wheels > 0 && (float)submerged_wheels / num_wheels > .666) {
+    if( num_wheels > 0 && submerged_wheels * 3 > num_wheels * 2 ) {
         return -1;
     }
 
@@ -677,10 +693,15 @@ float map::vehicle_traction( vehicle &veh ) const
         return 0.0f;
     }
 
-    return traction_wheel_area / total_wheel_area;
+    const float mass_penalty = ( 1.0f - traction_wheel_area / total_wheel_area ) * veh.total_mass();
+
+    float traction = std::min( 1.0f, traction_wheel_area / mass_penalty );
+    add_msg( m_debug, "%s has traction %.2f", veh.name.c_str(), traction );
+    // For now make it easy until it gets properly balanced: add a low cap of 0.1
+    return std::max( 0.1f, traction );
 }
 
-float map::vehicle_buoyancy( vehicle &veh ) const
+float map::vehicle_buoyancy( const vehicle &veh ) const
 {
     const tripoint pt = veh.global_pos3();
     const auto &float_indices = veh.floating;
@@ -2918,47 +2939,12 @@ bool map::flammable_items_at( const tripoint &p )
     return false;
 }
 
-bool map::moppable_items_at( const tripoint &p )
-{
-    for (auto &i : i_at(p)) {
-        if (i.made_of(LIQUID)) {
-            return true;
-        }
-    }
-    const field &fld = field_at(p);
-    if(fld.findField(fd_blood) != 0 || fld.findField(fd_blood_veggy) != 0 ||
-          fld.findField(fd_blood_insect) != 0 || fld.findField(fd_blood_invertebrate) != 0
-          || fld.findField(fd_gibs_flesh) != 0 || fld.findField(fd_gibs_veggy) != 0 ||
-          fld.findField(fd_gibs_insect) != 0 || fld.findField(fd_gibs_invertebrate) != 0
-          || fld.findField(fd_bile) != 0 || fld.findField(fd_slime) != 0 ||
-          fld.findField(fd_sludge) != 0) {
-        return true;
-    }
-    int vpart;
-    vehicle *veh = veh_at(p, vpart);
-    if(veh != 0) {
-        std::vector<int> parts_here = veh->parts_at_relative(veh->parts[vpart].mount.x, veh->parts[vpart].mount.y);
-        for(auto &i : parts_here) {
-            if(veh->parts[i].blood > 0) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 void map::decay_fields_and_scent( const int amount )
 {
     // Decay scent separately, so that later we can use field count to skip empty submaps
     tripoint tmp;
     tmp.z = abs_sub.z; // TODO: Make this happen on all z-levels
-    for( tmp.x = 0; tmp.x < my_MAPSIZE * SEEX; tmp.x++ ) {
-        for( tmp.y = 0; tmp.y < my_MAPSIZE * SEEY; tmp.y++ ) {
-            if( g->scent( tmp ) > 0 ) {
-                g->scent( tmp )--;
-            }
-        }
-    }
+    g->scent.decay();
 
     const int amount_fire = amount / 3; // Decay fire by this much
     const int amount_liquid = amount / 2; // Decay washable fields (blood, guts etc.) by this
@@ -3099,36 +3085,59 @@ bool map::has_nearby_fire( const tripoint &p, int radius )
     return false;
 }
 
-void map::mop_spills( const tripoint &p ) {
+bool map::mop_spills( const tripoint &p )
+{
     auto items = i_at( p );
-    for( auto it = items.begin(); it != items.end(); ) {
-        if( it->made_of(LIQUID) ) {
-            it = items.erase( it );
-        } else {
-            it++;
-        }
+    auto new_end = std::remove_if( items.begin(), items.end(), []( const item & it ) {
+        return it.made_of( LIQUID );
+    } );
+    bool retval = new_end != items.end();
+    while( new_end != items.end() ) {
+        new_end = items.erase( new_end );
     }
-    remove_field( p, fd_blood );
-    remove_field( p, fd_blood_veggy );
-    remove_field( p, fd_blood_insect );
-    remove_field( p, fd_blood_invertebrate );
-    remove_field( p, fd_gibs_flesh );
-    remove_field( p, fd_gibs_veggy );
-    remove_field( p, fd_gibs_insect );
-    remove_field( p, fd_gibs_invertebrate );
-    remove_field( p, fd_bile );
-    remove_field( p, fd_slime );
-    remove_field( p, fd_sludge );
+
+    field &fld = field_at( p );
+    static const std::vector<field_id> to_check = {
+        fd_blood,
+        fd_blood_veggy,
+        fd_blood_insect,
+        fd_blood_invertebrate,
+        fd_gibs_flesh,
+        fd_gibs_veggy,
+        fd_gibs_insect,
+        fd_gibs_invertebrate,
+        fd_bile,
+        fd_slime,
+        fd_sludge
+    };
+    for( field_id fid : to_check ) {
+        retval |= fld.removeField( fid );
+    }
+
     int vpart;
-    vehicle *veh = veh_at(p, vpart);
-    if(veh != 0) {
+    vehicle *veh = veh_at( p, vpart );
+    if( veh != 0 ) {
         std::vector<int> parts_here = veh->parts_at_relative( veh->parts[vpart].mount.x,
-                                                              veh->parts[vpart].mount.y );
+                                      veh->parts[vpart].mount.y );
         for( auto &elem : parts_here ) {
-            veh->parts[elem].blood = 0;
+            if( veh->parts[elem].blood > 0 ) {
+                veh->parts[elem].blood = 0;
+                retval = true;
+            }
+            //remove any liquids that somehow didn't fall through to the ground
+            vehicle_stack here = veh->get_items( elem );
+            auto new_end = std::remove_if( here.begin(), here.end(), []( const item & it ) {
+                return it.made_of( LIQUID );
+            } );
+            retval |= ( new_end != here.end() );
+            while( new_end != here.end() ) {
+                new_end = here.erase( new_end );
+            }
         }
-    }
+    } // if veh != 0
+    return retval;
 }
+
 
 void map::fungalize( const tripoint &sporep, Creature *origin, double spore_chance )
 {
@@ -4707,22 +4716,39 @@ item &map::add_item_at( const tripoint &p,
     return *new_pos;
 }
 
-item map::water_from(const tripoint &p)
+item map::water_from( const tripoint &p )
 {
     if( has_flag( "SALT_WATER", p ) ) {
-        item ret( "salt_water", 0, std::numeric_limits<int>::max() );
+        item ret( "salt_water", 0, item::INFINITE_CHARGES );
         return ret;
     }
 
-    item ret( "water", 0, std::numeric_limits<int>::max() );
-    if( ter( p ) == t_water_sh && one_in( 3 ) ) {
-        ret.poison = rng(1, 4);
-    } else if( ter( p ) == t_water_dp && one_in( 4 ) ) {
-        ret.poison = rng(1, 4);
-    } else if( ter( p ) == t_sewage ) {
-        ret.poison = rng( 1, 7 );
+    const ter_id terrain_id = g->m.ter( p );
+    item ret( "water", 0, item::INFINITE_CHARGES );
+    if( terrain_id == t_water_sh ) {
+        if( one_in( 3 ) ) {
+            ret.poison = rng( 1, 4 );
+        }
+        return ret;
     }
-    return ret;
+    if( terrain_id == t_water_dp ) {
+        if( one_in( 4 ) ) {
+            ret.poison = rng( 1, 4 );
+        }
+        return ret;
+    }
+    if( terrain_id == t_sewage ) {
+        ret.poison = rng( 1, 7 );
+        return ret;
+    }
+    // iexamine::water_source requires a valid liquid from this function.
+    if( terrain_id.obj().examine == &iexamine::water_source ) {
+        return ret;
+    }
+    if( furn( p ).obj().examine == &iexamine::water_source ) {
+        return ret;
+    }
+    return item();
 }
 
 // Check if it's in a fridge and is food, set the fridge
@@ -4986,6 +5012,13 @@ std::list<item> map::use_amount_square( const tripoint &p, const itype_id type,
                                         long &quantity )
 {
     std::list<item> ret;
+    // Handle infinite map sources.
+    item water = water_from( p );
+    if( water.typeId() == type ) {
+        ret.push_back( water );
+        quantity = 0;
+        return ret;
+    }
     int vpart = -1;
     vehicle *veh = veh_at( p, vpart );
 
@@ -5089,17 +5122,23 @@ void use_charges_from_furn( const furn_t &f, const itype_id &type, long &quantit
         return;
     }
 
+
     const itype *itt = f.crafting_pseudo_item_type();
-    if (itt == NULL || itt->id != type) {
-        return;
-    }
-    const itype *ammo = f.crafting_ammo_item_type();
-    if (ammo != NULL) {
-        item furn_item(itt->id, 0);
-        furn_item.charges = remove_charges_in_list(ammo, m->i_at( p ), quantity);
-        if (furn_item.charges > 0) {
-            ret.push_back(furn_item);
-            quantity -= furn_item.charges;
+    if( itt != nullptr && itt->tool && itt->tool->ammo_id != "NULL" ) {
+        const itype_id ammo = default_ammo( itt->tool->ammo_id );
+        auto stack = m->i_at( p );
+        auto iter = std::find_if( stack.begin(), stack.end(), [ammo]( const item &i ) { return i.typeId() == ammo; } );
+        if( iter != stack.end() ) {
+            item furn_item( itt->id, -1, iter->charges );
+            // The item constructor limits the charges to the (type specific) maximum.
+            // Setting it separately circumvents that - syncron with the code that creates
+            // the pseudo item (and fills its charges) in inventory.cpp
+            furn_item.charges = iter->charges;
+            if( furn_item.use_charges( type, quantity, ret, p ) ) {
+                stack.erase( iter );
+            } else {
+                iter->charges = furn_item.charges;
+            }
         }
     }
 }
@@ -5109,6 +5148,14 @@ std::list<item> map::use_charges(const tripoint &origin, const int range,
 {
     std::list<item> ret;
     for( const tripoint &p : closest_tripoints_first( range, origin ) ) {
+        // Handle infinite map sources.
+        item water = water_from( p );
+        if( water.typeId() == type ) {
+            ret.push_back( water );
+            quantity = 0;
+            return ret;
+        }
+
         if( has_furn( p ) && accessible_furniture( origin, p, range ) ) {
             use_charges_from_furn( furn_at( p ), type, quantity, this, p, ret );
             if( quantity <= 0 ) {
@@ -5662,13 +5709,6 @@ void map::add_splatter_trail( const field_id type, const tripoint &from, const t
     }
 }
 
-void map::add_splatter_trail( const field_id type, const std::vector<tripoint> &trajectory, int length )
-{
-    if( length > 0 && !trajectory.empty() ) {
-        add_splatter_trail( type, trajectory.back(), shift_line_end( trajectory, length - 1 ) );
-    }
-}
-
 void map::add_splash( const field_id type, const tripoint &center, int radius, int density )
 {
     if( type == fd_null ) {
@@ -5745,7 +5785,7 @@ void map::debug()
   for (int j = 0; j <= SEEY * 2; j++) {
    if (i_at(i, j).size() > 0) {
     mvprintw(1, 0, "%d, %d: %d items", i, j, i_at(i, j).size());
-    mvprintw(2, 0, "%c, %d", i_at(i, j)[0].symbol(), i_at(i, j)[0].color());
+    mvprintw(2, 0, "%s, %d", i_at(i, j)[0].symbol().c_str(), i_at(i, j)[0].color());
     getch();
    }
   }
@@ -6101,6 +6141,11 @@ bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &
         }
     }
 
+    // TODO: change the local variable sym to std::string and use it instead of this hack.
+    // Currently this are different variables because terrain/... uses long as symbol type and
+    // item now use string. Ideally they should all be strings.
+    std::string item_sym;
+
     // If there are items here, draw those instead
     if( show_items && curr_maptile.get_item_count() > 0 && sees_some_items( p, g->u ) ) {
         // if there's furniture/terrain/trap/fields (sym!='.')
@@ -6109,7 +6154,7 @@ bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &
             hi = true;
         } else {
             // otherwise override with the symbol of the last item
-            sym = curr_maptile.get_uppermost_item().symbol();
+            item_sym = curr_maptile.get_uppermost_item().symbol();
             if (!draw_item_sym) {
                 tercol = curr_maptile.get_uppermost_item().color();
             }
@@ -6124,6 +6169,7 @@ bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &
     if( veh != nullptr ) {
         sym = special_symbol( veh->face.dir_symbol( veh->part_sym( veh_part ) ) );
         tercol = veh->part_color( veh_part );
+        item_sym = ""; // clear the item symbol so `sym` is used instead.
     }
 
     // If there's graffiti here, change background color
@@ -6157,15 +6203,23 @@ bool map::draw_maptile( WINDOW* w, player &u, const tripoint &p, const maptile &
 
     if( inorder ) {
         // Rastering the whole map, take advantage of automatically moving the cursor.
-        wputch(w, tercol, sym);
+        if( item_sym.empty() ) {
+            wputch(w, tercol, sym);
+        } else {
+            wprintz( w, tercol, "%s", item_sym.c_str() );
+        }
     } else {
         // Otherwise move the cursor before drawing.
         const int k = p.x + getmaxx(w) / 2 - view_center.x;
         const int j = p.y + getmaxy(w) / 2 - view_center.y;
-        mvwputch(w, j, k, tercol, sym);
+        if( item_sym.empty() ) {
+            mvwputch(w, j, k, tercol, sym);
+        } else {
+            mvwprintz( w, j, k, tercol, "%s", item_sym.c_str() );
+        }
     }
 
-    return !zlevels || sym != ' ' || p.z <= -OVERMAP_DEPTH || !curr_ter.has_flag( TFLAG_NO_FLOOR );
+    return !zlevels || sym != ' ' || !item_sym.empty() || p.z <= -OVERMAP_DEPTH || !curr_ter.has_flag( TFLAG_NO_FLOOR );
 }
 
 void map::draw_from_above( WINDOW* w, player &u, const tripoint &p,
@@ -8132,22 +8186,25 @@ template<typename Functor>
     }
 }
 
-void map::scent_blockers( bool (&blocks_scent)[SEEX * MAPSIZE][SEEY * MAPSIZE],
-                          bool (&reduces_scent)[SEEX * MAPSIZE][SEEY * MAPSIZE],
+void map::scent_blockers( std::array<std::array<bool, SEEX * MAPSIZE>, SEEY * MAPSIZE> &blocks_scent,
+                          std::array<std::array<bool, SEEX * MAPSIZE>, SEEY * MAPSIZE> &reduces_scent,
                           const int minx, const int miny, const int maxx, const int maxy )
 {
     auto reduce = TFLAG_REDUCE_SCENT;
     auto block = TFLAG_WALL;
     auto fill_values = [&]( const tripoint &gp, const submap *sm, const point &lp ) {
+        // We need to generate the x/y coords, because we can't get them "for free"
+        const int x = gp.x * SEEX + lp.x;
+        const int y = gp.y * SEEY + lp.y;
         if( sm->get_ter( lp.x, lp.y ).obj().has_flag( block ) ) {
-            // We need to generate the x/y coords, because we can't get them "for free"
-            const int x = ( gp.x * SEEX ) + lp.x;
-            const int y = ( gp.y * SEEY ) + lp.y;
             blocks_scent[x][y] = true;
+            reduces_scent[x][y] = false;
         } else if( sm->get_ter( lp.x, lp.y ).obj().has_flag( reduce ) || sm->get_furn( lp.x, lp.y ).obj().has_flag( reduce ) ) {
-            const int x = ( gp.x * SEEX ) + lp.x;
-            const int y = ( gp.y * SEEY ) + lp.y;
+            blocks_scent[x][y] = false;
             reduces_scent[x][y] = true;
+        } else {
+            blocks_scent[x][y] = false;
+            reduces_scent[x][y] = false;
         }
 
         return ITER_CONTINUE;

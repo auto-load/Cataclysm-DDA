@@ -458,8 +458,12 @@ public:
     void update_vehicle_list( submap * const to, const int zlev );
 
     void destroy_vehicle (vehicle *veh);
-    void vehmove();          // Vehicle movement
-    bool vehproceed(); // Returns true if a vehicle moved, false otherwise
+    // Vehicle movement
+    void vehmove();
+    // Selects a vehicle to move, returns false if no moving vehicles
+    bool vehproceed();
+    // Actually moves a vehicle
+    bool vehact( vehicle &veh );
 
 // 3D vehicles
     VehicleList get_vehicles( const tripoint &start, const tripoint &end );
@@ -498,12 +502,12 @@ public:
     // <0.0 when the vehicle should be destroyed (sunk in water)
     // TODO: Add the values between 0.0 and 1.0 for offroading
     // TODO: Remove the ugly sinking vehicle hack
-    float vehicle_traction( vehicle &veh ) const;
+    float vehicle_traction( const vehicle &veh ) const;
 
     // Like traction, except for water
     // TODO: Actually implement (this is a stub)
     // TODO: Test for it when the vehicle sinks rather than when it has VP_FLOATS
-    float vehicle_buoyancy( vehicle &veh ) const;
+    float vehicle_buoyancy( const vehicle &veh ) const;
 
     // Returns if the vehicle should fall down a z-level
     bool vehicle_falling( vehicle &veh );
@@ -678,7 +682,6 @@ public:
  bool is_last_ter_wall(const bool no_furn, const int x, const int y,
                        const int xmax, const int ymax, const direction dir) const;
     bool flammable_items_at( const tripoint &p );
-    bool moppable_items_at( const tripoint &p );
  point random_outdoor_tile();
 // mapgen
 
@@ -749,7 +752,11 @@ void add_corpse( const tripoint &p );
     void fungalize( const tripoint &p, Creature *source = nullptr, double spore_chance = 0.0 );
 
     bool has_adjacent_furniture( const tripoint &p );
-    void mop_spills( const tripoint &p );
+     /** Remove moppable fields/items at this location
+     *  @param p the location
+     *  @return true if anything moppable was there, false otherwise.
+     */
+    bool mop_spills( const tripoint &p );
     /**
     * Moved here from weather.cpp for speed. Decays fire, washable fields and scent.
     * Washable fields are decayed only by 1/3 of the amount fire is.
@@ -981,7 +988,6 @@ void add_corpse( const tripoint &p );
         // Splatters of various kind
         void add_splatter( const field_id type, const tripoint &where, int density = 1 );
         void add_splatter_trail( const field_id type, const tripoint &from, const tripoint &to );
-        void add_splatter_trail( const field_id type, const std::vector<tripoint> &trajectory, int length );
         void add_splash( const field_id type, const tripoint &center, int radius, int density );
 
 // End of 3D field function block
@@ -991,8 +997,8 @@ void add_corpse( const tripoint &p );
      * Build the map of scent-resistant tiles.
      * Should be way faster than if done in `game.cpp` using public map functions.
      */
-    void scent_blockers( bool (&blocks_scent)[SEEX * MAPSIZE][SEEY * MAPSIZE],
-                         bool (&reduces_scent)[SEEX * MAPSIZE][SEEY * MAPSIZE],
+    void scent_blockers( std::array<std::array<bool, SEEX * MAPSIZE>, SEEY * MAPSIZE> &blocks_scent,
+                         std::array<std::array<bool, SEEX * MAPSIZE>, SEEY * MAPSIZE> &reduces_scent,
                          int minx, int miny, int maxx, int maxy );
 
 // Computers
