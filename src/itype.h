@@ -17,6 +17,10 @@
 #include <bitset>
 #include <memory>
 
+#ifndef gettext_noop
+#define gettext_noop(x) x
+#endif
+
 // see item.h
 class item_category;
 class Item_factory;
@@ -34,23 +38,20 @@ enum art_effect_passive : int;
 class material_type;
 using material_id = string_id<material_type>;
 typedef std::string itype_id;
-typedef std::string ammotype;
+class ammunition_type;
+using ammotype = string_id<ammunition_type>;
 class fault;
 using fault_id = string_id<fault>;
 struct quality;
 using quality_id = string_id<quality>;
 
-enum bigness_property_aspect : int {
-    BIGNESS_WHEEL_DIAMETER      // wheel size in inches, including tire
-};
-
 // Returns the name of a category of ammo (e.g. "shot")
-std::string ammo_name(std::string const &t);
+std::string ammo_name( const ammotype &ammo );
 // Returns the default ammo for a category of ammo (e.g. ""00_shot"")
-std::string const& default_ammo(std::string const &guntype);
+const itype_id &default_ammo( const ammotype &ammo );
 
 struct islot_tool {
-    std::string ammo_id = "NULL";
+    ammotype ammo_id = NULL_ID;
 
     itype_id revert_to = "null";
     std::string revert_msg;
@@ -137,6 +138,11 @@ struct islot_container {
      * Contents do not spoil.
      */
     bool preserves = false;
+    /**
+     * If this is set to anything but "null", changing this container's contents in any way
+     * will turn this item into that type.
+     */
+    itype_id unseals_into = "null";
 };
 
 struct islot_armor {
@@ -241,10 +247,6 @@ struct islot_book {
     };
     typedef std::set<recipe_with_description_t> recipe_list_t;
     recipe_list_t recipes;
-    /**
-     * Special effects that can happen after the item has been read. May be empty.
-     */
-    std::vector<use_function> use_methods;
 };
 
 /**
@@ -289,6 +291,16 @@ struct islot_engine
         std::set<fault_id> faults;
 };
 
+struct islot_wheel
+{
+    public:
+        /** diameter of wheel (inches) */
+        int diameter = 0;
+
+        /** width of wheel (inches) */
+        int width = 0;
+};
+
 // TODO: this shares a lot with the ammo item type, merge into a separate slot type?
 struct islot_gun : common_ranged_data {
     /**
@@ -298,7 +310,7 @@ struct islot_gun : common_ranged_data {
     /**
      * What type of ammo this gun uses.
      */
-    ammotype ammo = "NULL";
+    ammotype ammo = NULL_ID;
     /**
      * Gun durability, affects gun being damaged during shooting.
      */
@@ -314,7 +326,7 @@ struct islot_gun : common_ranged_data {
     /**
      * Noise displayed when reloading the weapon.
      */
-    std::string reload_noise = "click.";
+    std::string reload_noise = gettext_noop( "click." );
     /**
      * Volume of the noise made when reloading this weapon.
      */
@@ -374,7 +386,7 @@ struct islot_gunmod : common_ranged_data {
     std::set<ammotype> acceptable_ammo;
 
     /** If changed from the default of "NULL" modifies parent guns ammo to this type */
-    ammotype ammo_modifier = "NULL";
+    ammotype ammo_modifier = NULL_ID;
 
     /** @todo add documentation */
     int sight_dispersion = -1;
@@ -400,7 +412,7 @@ struct islot_gunmod : common_ranged_data {
 
 struct islot_magazine {
     /** What type of ammo this magazine can be loaded with */
-    std::string type = "NULL";
+    ammotype type = NULL_ID;
 
     /** Capacity of magazine (in equivalent units to ammo charges) */
     int capacity = 0;
@@ -418,15 +430,17 @@ struct islot_magazine {
     int reload_time = 100;
 
     /** For ammo belts one linkage (of given type) is dropped for each unit of ammo consumed */
-     itype_id linkage = "NULL";
+    itype_id linkage = "NULL";
+
+    /** If false, ammo will cook off if this mag is affected by fire */
+    bool protects_contents = false;
 };
 
 struct islot_ammo : common_ranged_data {
     /**
      * Ammo type, basically the "form" of the ammo that fits into the gun/tool.
-     * This is an id, it can be looked up in the @ref ammunition_type class.
      */
-    std::string type;
+    ammotype type;
     /**
      * Type id of casings, can be "null" for no casings at all.
      */
@@ -444,21 +458,20 @@ struct islot_ammo : common_ranged_data {
      * appropriate value is calculated based upon the other properties of the ammo
      */
     int loudness = -1;
-};
 
-struct islot_variable_bigness {
     /**
-     * Minimal value of the bigness value of items of this type.
+     * Should this ammo explode in fire?
+     * This value is cached by item_factory based on ammo_effects and item material.
+     * @warning It is not read from the json directly.
      */
-    int min_bigness = 0;
+    bool cookoff = false;
+
     /**
-     * Maximal value of the bigness value of items of this type.
-     */
-    int max_bigness = 0;
-    /**
-     * What the bigness actually represent see @ref bigness_property_aspect
-     */
-    bigness_property_aspect bigness_aspect = BIGNESS_WHEEL_DIAMETER;
+     * Should this ammo apply a special explosion effect when in fire?
+     * This value is cached by item_factory based on ammo_effects and item material.
+     * @warning It is not read from the json directly.
+     * */
+    bool special_cookoff = false;
 };
 
 struct islot_bionic {
@@ -528,10 +541,6 @@ class copyable_unique_ptr : public std::unique_ptr<T> {
 struct itype {
     friend class Item_factory;
 
-    // unique string identifier for this item,
-    // can be used as lookup key in master itype map
-    // Used for save files; aligns to itype_id above.
-    std::string id;
     /**
      * Slots for various item type properties. Each slot may contain a valid pointer or null, check
      * this before using it.
@@ -544,22 +553,26 @@ struct itype {
     copyable_unique_ptr<islot_armor> armor;
     copyable_unique_ptr<islot_book> book;
     copyable_unique_ptr<islot_engine> engine;
+    copyable_unique_ptr<islot_wheel> wheel;
     copyable_unique_ptr<islot_gun> gun;
     copyable_unique_ptr<islot_gunmod> gunmod;
     copyable_unique_ptr<islot_magazine> magazine;
-    copyable_unique_ptr<islot_variable_bigness> variable_bigness;
     copyable_unique_ptr<islot_bionic> bionic;
     copyable_unique_ptr<islot_spawn> spawn;
     copyable_unique_ptr<islot_ammo> ammo;
     copyable_unique_ptr<islot_seed> seed;
     copyable_unique_ptr<islot_artifact> artifact;
     /*@}*/
+
 protected:
+    std::string id; /** unique string identifier for this type */
+
     // private because is should only be accessed through itype::nname!
     // name and name_plural are not translated automatically
     // nname() is used for display purposes
     std::string name;        // Proper name, singular form, in American English.
     std::string name_plural; // name, plural form, in American English.
+
 public:
     std::string snippet_category;
     std::string description; // Flavor text
@@ -572,7 +585,9 @@ public:
     // What we're made of (material names). .size() == made of nothing.
     // MATERIALS WORK IN PROGRESS.
     std::vector<material_id> materials;
-    std::vector<use_function> use_methods; // Special effects of use
+
+    /** Actions an instance can perform (if any) indexed by action type */
+    std::map<std::string, use_function> use_methods;
 
     std::set<std::string> item_tags;
     std::set<matec_id> techniques;
@@ -637,8 +652,6 @@ public:
             return "BOOK";
         } else if( gun ) {
             return "GUN";
-        } else if( variable_bigness ) {
-            return "VEHICLE_PART";
         } else if( bionic ) {
             return "BIONIC";
         } else if( ammo ) {
@@ -650,6 +663,11 @@ public:
     // Returns the name of the item type in the correct language and with respect to its grammatical number,
     // based on quantity (example: item type “anvil”, nname(4) would return “anvils” (as in “4 anvils”).
     std::string nname(unsigned int quantity) const;
+
+    // Allow direct access to the type id for the few cases that need it.
+    itype_id get_id() const {
+        return id;
+    }
 
     bool count_by_charges() const
     {

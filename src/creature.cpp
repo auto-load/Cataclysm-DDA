@@ -13,6 +13,7 @@
 #include "vehicle.h"
 #include "debug.h"
 #include "field.h"
+#include "projectile.h"
 
 #include <algorithm>
 #include <numeric>
@@ -230,12 +231,14 @@ bool Creature::sees( const tripoint &t, bool is_player ) const
         return false;
     }
 
-    const int range_cur = sight_range( g->m.ambient_light_at(t) );
+    const int range_cur = sight_range( g->m.ambient_light_at( t ) );
     const int range_day = sight_range( DAYLIGHT_LEVEL );
-    const int range_min = std::min( range_cur, range_day );
+    const int range_night = sight_range( 0 );
+    const int range_max = std::max( range_day, range_night );
+    const int range_min = std::min( range_cur, range_max );
     const int wanted_range = rl_dist( pos(), t );
     if( wanted_range <= range_min ||
-        ( wanted_range <= range_day &&
+        ( wanted_range <= range_max &&
           g->m.ambient_light_at( t ) > g->natural_light_level( t.z ) ) ) {
         int range = 0;
         if( g->m.ambient_light_at( t ) > g->natural_light_level( t.z ) ) {
@@ -558,14 +561,18 @@ void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack
 
     // copy it, since we're mutating
     damage_instance impact = proj.impact;
-    if( proj_effects.count("NOGIB") > 0 ) {
-        impact.add_effect("NOGIB");
-    }
     if( damage_mult > 0.0f && proj_effects.count( "NO_DAMAGE_SCALING" ) ) {
         damage_mult = 1.0f;
     }
 
     impact.mult_damage(damage_mult);
+
+    if( proj_effects.count( "NOGIB" ) > 0 ) {
+        float dmg_ratio = (float)impact.total_damage() / get_hp_max( player::bp_to_hp( bp_hit ) );
+        if( dmg_ratio > 1.25f ) {
+            impact.mult_damage( 1.0f / dmg_ratio );
+        }
+    }
 
     dealt_dam = deal_damage(source, bp_hit, impact);
     dealt_dam.bp_hit = bp_hit;
@@ -575,26 +582,26 @@ void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack
         if (made_of( material_id( "veggy" ) ) || made_of( material_id( "cotton" ) ) ||
             made_of( material_id( "wool" ) ) || made_of( material_id( "paper" ) ) ||
             made_of( material_id( "wood" ) ) ) {
-            add_effect( effect_onfire, rng(8, 20));
+            add_effect( effect_onfire, rng(8, 20), bp_hit );
         } else if (made_of( material_id( "flesh" ) ) || made_of( material_id( "iflesh" ) ) ) {
-            add_effect( effect_onfire, rng(5, 10));
+            add_effect( effect_onfire, rng(5, 10), bp_hit );
         }
     } else if (proj.proj_effects.count("INCENDIARY") ) {
         if (made_of( material_id( "veggy" ) ) || made_of( material_id( "cotton" ) ) ||
             made_of( material_id( "wool" ) ) || made_of( material_id( "paper" ) ) ||
             made_of( material_id( "wood" ) ) ) {
-            add_effect( effect_onfire, rng(2, 6));
+            add_effect( effect_onfire, rng(2, 6), bp_hit );
         } else if ( (made_of( material_id( "flesh" ) ) || made_of( material_id( "iflesh" ) ) ) &&
                     one_in(4) ) {
-            add_effect( effect_onfire, rng(1, 4));
+            add_effect( effect_onfire, rng(1, 4), bp_hit );
         }
     } else if (proj.proj_effects.count("IGNITE")) {
         if (made_of( material_id( "veggy" ) ) || made_of( material_id( "cotton" ) ) ||
             made_of( material_id( "wool" ) ) || made_of( material_id( "paper" ) ) ||
             made_of( material_id( "wood" ) ) ) {
-            add_effect( effect_onfire, rng(6, 6));
+            add_effect( effect_onfire, rng(6, 6), bp_hit );
         } else if (made_of( material_id( "flesh" ) ) || made_of( material_id( "iflesh" ) ) ) {
-            add_effect( effect_onfire, rng(10, 10));
+            add_effect( effect_onfire, rng(10, 10), bp_hit );
         }
     }
 
@@ -679,6 +686,7 @@ void Creature::deal_projectile_attack( Creature *source, dealt_projectile_attack
             }
         }
     }
+
     check_dead_state();
     attack.hit_critter = this;
     attack.missed_by = goodhit;
@@ -694,31 +702,26 @@ dealt_damage_instance Creature::deal_damage(Creature *source, body_part bp,
     int total_pain = 0;
     damage_instance d = dam; // copy, since we will mutate in absorb_hit
 
-    std::vector<int> dealt_dams(NUM_DT, 0);
+    dealt_damage_instance dealt_dams;
 
     absorb_hit(bp, d);
 
-    // add up all the damage units dealt
-    int cur_damage;
-    for (std::vector<damage_unit>::const_iterator it = d.damage_units.begin();
-         it != d.damage_units.end(); ++it) {
-        cur_damage = 0;
-        deal_damage_handle_type(*it, bp, cur_damage, total_pain);
-        if (cur_damage > 0) {
-            dealt_dams[it->type] += cur_damage;
+    // Add up all the damage units dealt
+    for( const auto &it : d.damage_units ) {
+        int cur_damage = 0;
+        deal_damage_handle_type( it, bp, cur_damage, total_pain );
+        if( cur_damage > 0 ) {
+            dealt_dams.dealt_dams[ it.type ] += cur_damage;
             total_damage += cur_damage;
         }
     }
 
     mod_pain(total_pain);
-    if( dam.effects.count("NOGIB") ) {
-        total_damage = std::min( total_damage, get_hp() + 1 );
-    }
 
-    apply_damage(source, bp, total_damage);
-    return dealt_damage_instance(dealt_dams);
+    apply_damage( source, bp, total_damage );
+    return dealt_dams;
 }
-void Creature::deal_damage_handle_type(const damage_unit &du, body_part, int &damage, int &pain)
+void Creature::deal_damage_handle_type(const damage_unit &du, body_part bp, int &damage, int &pain)
 {
     // Handles ACIDPROOF, electric immunity etc.
     if( is_immune_damage( du.type ) ) {
@@ -746,7 +749,7 @@ void Creature::deal_damage_handle_type(const damage_unit &du, body_part, int &da
         damage += adjusted_damage;
         pain += adjusted_damage / 4;
         if( rng(0, 100) < adjusted_damage ) {
-            add_effect( effect_onfire, rng(1, 3));
+            add_effect( effect_onfire, rng(1, 3), bp );
         }
         break;
     case DT_ELECTRIC: // Electrical damage adds a major speed/dex debuff

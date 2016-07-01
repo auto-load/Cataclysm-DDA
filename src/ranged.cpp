@@ -1,6 +1,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include "cata_utility.h"
 #include "game.h"
 #include "map.h"
 #include "debug.h"
@@ -8,6 +9,7 @@
 #include "line.h"
 #include "skill.h"
 #include "rng.h"
+#include "projectile.h"
 #include "item.h"
 #include "options.h"
 #include "action.h"
@@ -33,12 +35,13 @@ const skill_id skill_throw( "throw" );
 const skill_id skill_gun( "gun" );
 const skill_id skill_melee( "melee" );
 const skill_id skill_driving( "driving" );
+const skill_id skill_dodge( "dodge" );
 
 const efftype_id effect_on_roof( "on_roof" );
 const efftype_id effect_bounced( "bounced" );
 
 static projectile make_gun_projectile( const item &gun );
-int time_to_fire(player &p, const itype &firing);
+int time_to_fire( const Character &p, const itype &firing );
 static inline void eject_casing( player& p, item& weap );
 int recoil_add( player& p, const item& gun, int shot );
 void make_gun_sound_effect(player &p, bool burst, item *weapon);
@@ -169,6 +172,11 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
         target.x = source.x + roll_remainder( new_range * cos( rad ) );
         target.y = source.y + roll_remainder( new_range * sin( rad ) );
 
+        if( target == source ) {
+            target.x = source.x + sgn( dx );
+            target.y = source.y + sgn( dy );
+        }
+
         // Don't extend range further, miss here can mean hitting the ground near the target
         range = rl_dist( source, target );
         extend_to_range = range;
@@ -177,9 +185,8 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
         missed_by = 1.0;
         sfx::play_variant_sound( "bullet_hit", "hit_wall", sfx::get_heard_volume( target ), sfx::get_heard_angle( target ));
         // TODO: Z dispersion
-        int junk = 0;
         // If we missed, just draw a straight line.
-        trajectory = line_to( source, target, junk, junk );
+        trajectory = line_to( source, target );
     } else {
         // Go around obstacles a little if we're on target.
         trajectory = g->m.find_clear_path( source, target );
@@ -263,11 +270,17 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
         }
 
         Creature *critter = g->critter_at( tp );
+        if( critter == this ) {
+            // No hitting self with "weird" attacks
+            critter = nullptr;
+        }
+
         monster *mon = dynamic_cast<monster *>(critter);
         // ignore non-point-blank digging targets (since they are underground)
         if( mon != nullptr && mon->digging() &&
             rl_dist( pos(), tp ) > 1) {
-            critter = mon = nullptr;
+            critter = nullptr;
+            mon = nullptr;
         }
 
         // Reset hit critter from the last iteration
@@ -365,62 +378,65 @@ dealt_projectile_attack Creature::projectile_attack( const projectile &proj_arg,
     return attack;
 }
 
-bool player::handle_gun_damage( const itype &firingt, const std::set<std::string> &curammo_effects )
+bool player::handle_gun_damage( item &it )
 {
-    const islot_gun *firing = firingt.gun.get();
+    if( !it.is_gun() ) {
+        debugmsg( "Tried to handle_gun_damage of a non-gun %s", it.tname().c_str() );
+        return false;
+    }
+
+    const auto &curammo_effects = it.ammo_effects();
+    const islot_gun *firing = it.type->gun.get();
     // Here we check if we're underwater and whether we should misfire.
     // As a result this causes no damage to the firearm, note that some guns are waterproof
     // and so are immune to this effect, note also that WATERPROOF_GUN status does not
     // mean the gun will actually be accurate underwater.
-    if (firing->skill_used != skill_archery &&
-        firing->skill_used != skill_throw ) {
-        if (is_underwater() && !weapon.has_flag("WATERPROOF_GUN") && one_in(firing->durability)) {
-            add_msg_player_or_npc(_("Your %s misfires with a wet click!"),
-                                  _("<npcname>'s %s misfires with a wet click!"),
-                                  weapon.tname().c_str());
-            return false;
-            // Here we check for a chance for the weapon to suffer a mechanical malfunction.
-            // Note that some weapons never jam up 'NEVER_JAMS' and thus are immune to this
-            // effect as current guns have a durability between 5 and 9 this results in
-            // a chance of mechanical failure between 1/64 and 1/1024 on any given shot.
-            // the malfunction may cause damage, but never enough to push the weapon beyond 'shattered'
-        } else if ((one_in(2 << firing->durability)) && !weapon.has_flag("NEVER_JAMS")) {
-            add_msg_player_or_npc(_("Your %s malfunctions!"),
-                                  _("<npcname>'s %s malfunctions!"),
-                                  weapon.tname().c_str());
-            if( weapon.damage < MAX_ITEM_DAMAGE && one_in( 4 * firing->durability ) ) {
-                add_msg_player_or_npc(m_bad, _("Your %s is damaged by the mechanical malfunction!"),
-                                      _("<npcname>'s %s is damaged by the mechanical malfunction!"),
-                                      weapon.tname().c_str());
-                // Don't increment until after the message
-                weapon.damage++;
-            }
-            return false;
-            // Here we check for a chance for the weapon to suffer a misfire due to
-            // using OEM bullets. Note that these misfires cause no damage to the weapon and
-            // some types of ammunition are immune to this effect via the NEVER_MISFIRES effect.
-        } else if (!curammo_effects.count("NEVER_MISFIRES") && one_in(1728)) {
-            add_msg_player_or_npc(_("Your %s misfires with a dry click!"),
-                                  _("<npcname>'s %s misfires with a dry click!"),
-                                  weapon.tname().c_str());
-            return false;
-            // Here we check for a chance for the weapon to suffer a misfire due to
-            // using player-made 'RECYCLED' bullets. Note that not all forms of
-            // player-made ammunition have this effect the misfire may cause damage, but never
-            // enough to push the weapon beyond 'shattered'.
-        } else if (curammo_effects.count("RECYCLED") && one_in(256)) {
-            add_msg_player_or_npc(_("Your %s misfires with a muffled click!"),
-                                  _("<npcname>'s %s misfires with a muffled click!"),
-                                  weapon.tname().c_str());
-            if( weapon.damage < MAX_ITEM_DAMAGE && one_in( firing->durability ) ) {
-                add_msg_player_or_npc(m_bad, _("Your %s is damaged by the misfired round!"),
-                                      _("<npcname>'s %s is damaged by the misfired round!"),
-                                      weapon.tname().c_str());
-                // Don't increment until after the message
-                weapon.damage++;
-            }
-            return false;
+    if (is_underwater() && !it.has_flag("WATERPROOF_GUN") && one_in(firing->durability)) {
+        add_msg_player_or_npc(_("Your %s misfires with a wet click!"),
+                              _("<npcname>'s %s misfires with a wet click!"),
+                              it.tname().c_str());
+        return false;
+        // Here we check for a chance for the weapon to suffer a mechanical malfunction.
+        // Note that some weapons never jam up 'NEVER_JAMS' and thus are immune to this
+        // effect as current guns have a durability between 5 and 9 this results in
+        // a chance of mechanical failure between 1/64 and 1/1024 on any given shot.
+        // the malfunction may cause damage, but never enough to push the weapon beyond 'shattered'
+    } else if ((one_in(2 << firing->durability)) && !it.has_flag("NEVER_JAMS")) {
+        add_msg_player_or_npc(_("Your %s malfunctions!"),
+                              _("<npcname>'s %s malfunctions!"),
+                              it.tname().c_str());
+        if( it.damage < MAX_ITEM_DAMAGE && one_in( 4 * firing->durability ) ) {
+            add_msg_player_or_npc(m_bad, _("Your %s is damaged by the mechanical malfunction!"),
+                                  _("<npcname>'s %s is damaged by the mechanical malfunction!"),
+                                  it.tname().c_str());
+            // Don't increment until after the message
+            it.damage++;
         }
+        return false;
+        // Here we check for a chance for the weapon to suffer a misfire due to
+        // using OEM bullets. Note that these misfires cause no damage to the weapon and
+        // some types of ammunition are immune to this effect via the NEVER_MISFIRES effect.
+    } else if (!curammo_effects.count("NEVER_MISFIRES") && one_in(1728)) {
+        add_msg_player_or_npc(_("Your %s misfires with a dry click!"),
+                              _("<npcname>'s %s misfires with a dry click!"),
+                              it.tname().c_str());
+        return false;
+        // Here we check for a chance for the weapon to suffer a misfire due to
+        // using player-made 'RECYCLED' bullets. Note that not all forms of
+        // player-made ammunition have this effect the misfire may cause damage, but never
+        // enough to push the weapon beyond 'shattered'.
+    } else if (curammo_effects.count("RECYCLED") && one_in(256)) {
+        add_msg_player_or_npc(_("Your %s misfires with a muffled click!"),
+                              _("<npcname>'s %s misfires with a muffled click!"),
+                              it.tname().c_str());
+        if( it.damage < MAX_ITEM_DAMAGE && one_in( firing->durability ) ) {
+            add_msg_player_or_npc(m_bad, _("Your %s is damaged by the misfired round!"),
+                                  _("<npcname>'s %s is damaged by the misfired round!"),
+                                  it.tname().c_str());
+            // Don't increment until after the message
+            it.damage++;
+        }
+        return false;
     }
     return true;
 }
@@ -468,7 +484,7 @@ int player::fire_gun( const tripoint &target, int shots, item& gun )
     int curshot = 0;
     int burst = 0; // count of shots against current target
     while( curshot != shots ) {
-        if( !handle_gun_damage( *gun.type, gun.ammo_effects() ) ) {
+        if( !handle_gun_damage( gun ) ) {
             break;
         }
 
@@ -631,7 +647,7 @@ dealt_projectile_attack player::throw_item( const tripoint &target, const item &
 
     // Rescaling to use the same units as projectile_attack
     const double shot_dispersion = deviation * (.01 / 0.00021666666666666666);
-    static const std::vector<material_id> ferric = { material_id( "iron" ), material_id( "steel" ) };
+    static const std::set<material_id> ferric = { material_id( "iron" ), material_id( "steel" ) };
 
     bool do_railgun = has_active_bionic("bio_railgun") &&
                       thrown.made_of_any( ferric );
@@ -925,15 +941,14 @@ static int draw_turret_aim( const player &p, WINDOW *w, int line_number, const t
         return line_number;
     }
 
-    const auto turret_state = veh->turrets_can_shoot( targ );
-    int num_ok = 0;
-    for( const auto &pr : turret_state ) {
-        if( pr.second == turret_all_ok ) {
-            num_ok++;
-        }
+    // fetch and display list of turrets that are ready to fire at the target
+    auto turrets = veh->turrets( targ );
+
+    mvwprintw( w, line_number++, 1, _("Turrets in range: %d"), turrets.size() );
+    for( const auto e : turrets ) {
+        mvwprintw( w, line_number++, 1, "*  %s", e->name().c_str() );
     }
 
-    mvwprintw( w, line_number++, 1, _("Turrets in range: %d"), num_ok );
     return line_number;
 }
 
@@ -1356,6 +1371,12 @@ static projectile make_gun_projectile( const item &gun ) {
             proj.set_drop( drop );
         }
 
+        if( fx.count( "FLARE" ) ) {
+            item drop( "handflare_lit" );
+            drop.active = true;
+            proj.set_drop( drop );
+        }
+
         if( fx.count( "CUSTOM_EXPLOSION" ) > 0  ) {
             proj.set_custom_explosion( gun.ammo_data()->explosion );
         }
@@ -1364,7 +1385,7 @@ static projectile make_gun_projectile( const item &gun ) {
     return proj;
 }
 
-int time_to_fire(player &p, const itype &firingt)
+int time_to_fire( const Character &p, const itype &firingt )
 {
     struct time_info_t {
         int min_time;  // absolute floor on the time taken to fire.
@@ -1450,14 +1471,14 @@ item::sound_data item::gun_noise( bool const burst ) const
 
     noise = std::max( noise, 0 );
 
-    if( ammo_type() == "40mm") {
+    if( ammo_type() == ammotype( "40mm" ) ) {
         return { 8, _( "Thunk!" ) };
 
     } else if( typeId() == "hk_g80") {
         return { 24, _( "tz-CRACKck!" ) };
 
-    } else if( ammo_type() == "gasoline" || ammo_type() == "66mm" ||
-               ammo_type() == "84x246mm" || ammo_type() == "m235" ) {
+    } else if( ammo_type() == ammotype( "gasoline" ) || ammo_type() == ammotype( "66mm" ) ||
+               ammo_type() == ammotype( "84x246mm" ) || ammo_type() == ammotype( "m235" ) ) {
         return { 4, _( "Fwoosh!" ) };
     }
 
@@ -1667,3 +1688,116 @@ void drop_or_embed_projectile( const dealt_projectile_attack &attack )
     }
 }
 
+double player::gun_value( const item &weap, long ammo ) const
+{
+    // TODO: Mods
+    // TODO: Allow using a specified type of ammo rather than default
+    if( weap.type->gun.get() == nullptr ) {
+        return 0.0;
+    }
+
+    if( ammo <= 0 ) {
+        return 0.0;
+    }
+
+    const islot_gun& gun = *weap.type->gun.get();
+    const itype_id ammo_type = weap.ammo_default( true );
+    const itype *def_ammo_i = ammo_type != "NULL" ?
+                              item::find_type( ammo_type ) :
+                              nullptr;
+    if( def_ammo_i != nullptr && def_ammo_i->ammo == nullptr ) {
+        debugmsg( "%s is default ammo for gun %s, but lacks ammo data",
+                  def_ammo_i->nname( ammo ).c_str(), weap.tname().c_str() );
+    }
+
+    float damage_factor = weap.gun_damage( false );
+    damage_factor += weap.gun_pierce( false ) / 2.0;
+
+    int total_dispersion = weap.gun_dispersion( false );
+    int total_recoil = weap.gun_recoil( false );
+
+    if( def_ammo_i != nullptr && def_ammo_i->ammo != nullptr ) {
+        const islot_ammo &def_ammo = *def_ammo_i->ammo;
+        damage_factor += def_ammo.damage;
+        damage_factor += def_ammo.pierce / 2;
+        total_dispersion += def_ammo.dispersion;
+        total_recoil += def_ammo.recoil;
+    }
+
+    total_dispersion += skill_dispersion( weap, false );
+    total_dispersion += weap.sight_dispersion( -1 );
+
+    int move_cost = time_to_fire( *this, *weap.type );
+    if( gun.clip != 0 && gun.clip < 10 ) {
+        // @todo RELOAD_ONE should get a penalty here
+        int reload_cost = gun.reload_time + encumb( bp_hand_l ) + encumb( bp_hand_r );
+        reload_cost /= gun.clip;
+        move_cost += reload_cost;
+    }
+
+    // "Medium range" below means 9 tiles, "short range" means 4
+    // Those are guarantees (assuming maximum time spent aiming)
+    static const std::vector<std::pair<float, float>> dispersion_thresholds = {{
+        // Headshots all the time
+        { 0.0f, 5.0f },
+        // Crit at medium range
+        { 100.0f, 4.5f },
+        // Crit at short range or good hit at medium
+        { 200.0f, 3.5f },
+        // OK hits at medium
+        { 300.0f, 3.0f },
+        // Point blank headshots
+        { 450.0f, 2.5f },
+        // OK hits at short
+        { 700.0f, 1.5f },
+        // Glances at medium, crits at point blank
+        { 1000.0f, 1.0f },
+        // Nothing guaranteed, pure gamble
+        { 2000.0f, 0.1f },
+    }};
+
+    static const std::vector<std::pair<float, float>> move_cost_thresholds = {{
+        { 10.0f, 4.0f },
+        { 25.0f, 3.0f },
+        { 100.0f, 1.0f },
+        { 500.0f, 5.0f },
+    }};
+
+    float move_cost_factor = multi_lerp( move_cost_thresholds, move_cost );
+
+    // Penalty for dodging in melee makes the gun unusable in melee
+    // Until NPCs get proper kiting, at least
+    int melee_penalty = weapon.volume() - get_skill_level( skill_dodge );
+    if( melee_penalty <= 0 ) {
+        // Dispersion matters less if you can just use the gun in melee
+        total_dispersion = std::min<int>(
+            ( total_dispersion + total_recoil ) / move_cost_factor,
+            total_dispersion );
+    }
+
+    float dispersion_factor = multi_lerp( dispersion_thresholds, total_dispersion );
+
+    float damage_and_accuracy = damage_factor * dispersion_factor;
+
+    // @todo Some better approximation of the ability to keep on shooting
+    static const std::vector<std::pair<float, float>> capacity_thresholds = {{
+        { 1.0f, 0.5f },
+        { 5.0f, 1.0f },
+        { 10.0f, 1.5f },
+        { 20.0f, 2.0f },
+        { 50.0f, 3.0f },
+    }};
+
+    // How much until reload
+    float capacity = gun.clip > 0 ? std::min<float>( gun.clip, ammo ) : ammo;
+    // How much until dry and a new weapon is needed
+    capacity += std::min<float>( 1.0, ammo / 20 );
+    float capacity_factor = multi_lerp( capacity_thresholds, capacity );
+
+    double gun_value = damage_and_accuracy * capacity_factor;
+
+    add_msg( m_debug, "%s as gun: %.1f total, %.1f dispersion, %.1f damage, %.1f capacity",
+             weap.tname().c_str(), gun_value, dispersion_factor, damage_factor,
+             capacity_factor );
+    return std::max( 0.0, gun_value );
+}

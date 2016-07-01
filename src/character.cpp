@@ -104,22 +104,6 @@ void Character::mod_stat( const std::string &stat, int modifier )
         mod_healthy( modifier );
     } else if( stat == "hunger" ) {
         mod_hunger( modifier );
-    } else if( stat == "speed" ) {
-        mod_speed_bonus( modifier );
-    } else if( stat == "dodge" ) {
-        mod_dodge_bonus( modifier );
-    } else if( stat == "block" ) {
-        mod_block_bonus( modifier );
-    } else if( stat == "hit" ) {
-        mod_hit_bonus( modifier );
-    } else if( stat == "bash" ) {
-        mod_bash_bonus( modifier );
-    } else if( stat == "cut" ) {
-        mod_cut_bonus( modifier );
-    } else if( stat == "pain" ) {
-        mod_pain( modifier );
-    } else if( stat == "moves" ) {
-        mod_moves( modifier );
     } else {
         Creature::mod_stat( stat, modifier );
     }
@@ -524,11 +508,7 @@ map_selector Character::nearby( int radius, bool accessible )
 
 item& Character::i_add(item it)
 {
-    itype_id item_type_id = "null";
-    if( it.type ) {
-        item_type_id = it.type->id;
-    }
-
+    itype_id item_type_id = it.typeId();
     last_item = item_type_id;
 
     if( it.is_food() || it.is_ammo() || it.is_gun()  || it.is_armor() ||
@@ -884,7 +864,7 @@ bool Character::has_artifact_with(const art_effect_passive effect) const
 bool Character::is_wearing(const itype_id & it) const
 {
     for (auto &i : worn) {
-        if (i.type->id == it) {
+        if (i.typeId() == it) {
             return true;
         }
     }
@@ -894,7 +874,7 @@ bool Character::is_wearing(const itype_id & it) const
 bool Character::is_wearing_on_bp(const itype_id & it, body_part bp) const
 {
     for (auto &i : worn) {
-        if (i.type->id == it && i.covers(bp)) {
+        if (i.typeId() == it && i.covers(bp)) {
             return true;
         }
     }
@@ -1574,8 +1554,16 @@ void Character::update_health(int external_modifiers)
         set_healthy_mod( -200 );
     }
 
+    // Active leukocyte breeder will keep your health near 100
+    int effective_healthy_mod = get_healthy_mod();
+    if( has_active_bionic( "bio_leukocyte" ) ) {
+        // Side effect: dependency
+        mod_healthy_mod( -50, -200 );
+        effective_healthy_mod = 100;
+    }
+
     // Over the long run, health tends toward healthy_mod.
-    int break_even = get_healthy() - get_healthy_mod() + external_modifiers;
+    int break_even = get_healthy() - effective_healthy_mod + external_modifiers;
 
     // But we allow some random variation.
     const long roll = rng( -100, 100 );
@@ -1893,7 +1881,7 @@ int Character::throw_range( const item &it ) const
     ///\EFFECT_STR increases throwing range, vs item weight (high or low)
     int ret = (str_cur * 8) / (tmp.weight() >= 150 ? tmp.weight() / 113 : 10 - int(tmp.weight() / 15));
     ret -= int(tmp.volume() / 4);
-    static const std::vector<material_id> affected_materials = { material_id( "iron" ), material_id( "steel" ) };
+    static const std::set<material_id> affected_materials = { material_id( "iron" ), material_id( "steel" ) };
     if( has_active_bionic("bio_railgun") && tmp.made_of_any( affected_materials ) ) {
         ret *= 2;
     }
@@ -1926,52 +1914,25 @@ bool Character::is_blind() const
 
 bool Character::pour_into( item &container, item &liquid )
 {
-    if( liquid.is_ammo() && ( container.is_tool() || container.is_gun() ) ) {
-        // TODO: merge this part with game::reload
-        // for filling up chainsaws, jackhammers and flamethrowers
+    std::string err;
 
-        if( container.ammo_type() != liquid.ammo_type() ) {
-            add_msg_if_player( m_info, _( "Your %1$s won't hold %2$s." ), container.tname().c_str(),
-                               liquid.tname().c_str() );
-            return false;
-        }
+    const bool allow_bucket = &container == &weapon || !has_item( container );
+    const int available_volume = allow_bucket ? INT_MAX : volume_capacity() - volume_carried();
+    const long amount = container.get_remaining_capacity_for_liquid( liquid, err, allow_bucket,
+                                                                     available_volume );
+    if( !err.empty() ) {
+        add_msg_if_player( m_bad, err.c_str() );
+        return false;
+    }
 
-        if( container.ammo_remaining() >= container.ammo_capacity() ) {
-            add_msg_if_player( m_info, _( "Your %1$s can't hold any more %2$s." ), container.tname().c_str(),
-                               liquid.tname().c_str() );
-            return false;
-        }
+    add_msg_if_player( _( "You pour %1$s into the %2$s." ), liquid.tname().c_str(),
+                       container.tname().c_str() );
 
-        if( container.ammo_remaining() && container.ammo_current() != liquid.typeId() ) {
-            add_msg_if_player( m_info, _( "You can't mix loads in your %s." ), container.tname().c_str() );
-            return false;
-        }
+    container.fill_with( liquid, amount );
+    inv.unsort();
 
-        add_msg_if_player( _( "You pour %1$s into the %2$s." ), liquid.tname().c_str(),
-                           container.tname().c_str() );
-        auto qty = std::min( liquid.charges, container.ammo_capacity() - container.ammo_remaining() );
-        liquid.charges -= qty;
-        container.ammo_set( liquid.typeId(), container.ammo_remaining() + qty );
-        if( liquid.charges > 0 ) {
-            add_msg_if_player( _( "There's some left over!" ) );
-        }
-
-    } else {
-        // Filling up normal containers
-        bool allow_bucket = &container == &weapon || !has_item( container );
-        std::string err;
-        if( !container.fill_with( liquid, err, allow_bucket ) ) {
-            add_msg_if_player( m_info, err.c_str() );
-            return false;
-        }
-
-        inv.unsort();
-        add_msg_if_player( _( "You pour %1$s into the %2$s." ), liquid.tname().c_str(),
-                           container.tname().c_str() );
-        if( liquid.charges > 0 ) {
-            // TODO: maybe not show this if the source is infinite. Best would be to move it to the caller.
-            add_msg_if_player( _( "There's some left over!" ) );
-        }
+    if( liquid.charges > 0 ) {
+        add_msg_if_player( _( "There's some left over!" ) );
     }
 
     return true;
@@ -1979,7 +1940,7 @@ bool Character::pour_into( item &container, item &liquid )
 
 bool Character::pour_into( vehicle &veh, item &liquid )
 {
-    const itype_id &ftype = liquid.type->id;
+    const itype_id &ftype = liquid.typeId();
     const int fuel_per_charge = fuel_charges_to_amount_factor( ftype );
     const int fuel_cap = veh.fuel_capacity( ftype );
     const int fuel_amnt = veh.fuel_left( ftype );
@@ -2000,4 +1961,66 @@ bool Character::pour_into( vehicle &veh, item &liquid )
                  liquid.type_name().c_str() );
     }
     return true;
+}
+
+resistances Character::mutation_armor( body_part bp ) const
+{
+    resistances res;
+    for( auto &iter : my_mutations ) {
+        const mutation_branch &mb = mutation_branch::get( iter.first );
+        res += mb.damage_resistance( bp );
+    }
+
+    return res;
+}
+
+float Character::mutation_armor( body_part bp, damage_type dt ) const
+{
+    return mutation_armor( bp ).type_resist( dt );
+}
+
+float Character::mutation_armor( body_part bp, const damage_unit &du ) const
+{
+    return mutation_armor( bp ).get_effective_resist( du );
+}
+
+long Character::ammo_count_for( const item &gun )
+{
+    long ret = item::INFINITE_CHARGES;
+    if( !gun.is_gun() ) {
+        return ret;
+    }
+
+    long required = gun.ammo_required();
+
+    if( required > 0 ) {
+        long total_ammo = 0;
+        total_ammo += gun.ammo_remaining();
+
+        bool has_mag = gun.magazine_integral();
+
+        const auto found_ammo = find_ammo( gun, true, -1 );
+        long loose_ammo = 0;
+        for( const auto &ammo : found_ammo ) {
+            if( ammo->is_magazine() ) {
+                has_mag = true;
+                total_ammo += ammo->ammo_remaining();
+            } else if( ammo->is_ammo() ) {
+                loose_ammo += ammo->charges;
+            }
+        }
+
+        if( has_mag ) {
+            total_ammo += loose_ammo;
+        }
+
+        ret = std::min<long>( ret, total_ammo / required );
+    }
+
+    long ups_drain = gun.get_gun_ups_drain();
+    if( ups_drain > 0 ) {
+        ret = std::min<long>( ret, charges_of( "UPS" ) / ups_drain );
+    }
+
+    return ret;
 }

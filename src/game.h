@@ -24,8 +24,6 @@ extern game *g;
 
 #ifdef TILES
 extern void try_sdl_update();
-extern void invalidate_all_framebuffers();
-extern void clear_window_area( WINDOW* win );
 #endif // TILES
 
 extern bool trigdist;
@@ -86,7 +84,8 @@ struct special_game;
 struct mtype;
 using mtype_id = string_id<mtype>;
 using itype_id = std::string;
-using ammotype = std::string;
+class ammunition_type;
+using ammotype = string_id<ammunition_type>;
 class mission;
 class map;
 class Creature;
@@ -132,7 +131,6 @@ class game
 {
         friend class editmap;
         friend class advanced_inventory;
-        friend class DynamicDataLoader; // To allow unloading dynamicly loaded stuff
     public:
         game();
         ~game();
@@ -441,7 +439,8 @@ class game
 
         item *inv_map_for_liquid(const item &liquid, const std::string &title, int radius = 0);
 
-        int inv( int position = INT_MIN );
+        void interactive_inv();
+
         int inv_for_filter( const std::string &title, item_filter filter, const std::string &none_message = "" );
         int inv_for_all( const std::string &title, const std::string &none_message = "" );
         int inv_for_activatables( const player &p, const std::string &title );
@@ -672,8 +671,9 @@ class game
         bool right_sidebar;
         bool fullscreen;
         bool was_fullscreen;
-        void exam_vehicle(vehicle &veh, const tripoint &p, int cx = 0,
-                          int cy = 0); // open vehicle interaction screen
+
+        /** open vehicle interaction screen */
+        void exam_vehicle(vehicle &veh, int cx = 0, int cy = 0);
 
         // put items from the item-vector on the map/a vehicle
         // at (dirx, diry), items are dropped into a vehicle part
@@ -873,7 +873,6 @@ private:
 
         bool is_game_over();     // Returns true if the player quit or died
         void death_screen();     // Display our stats, "GAME OVER BOO HOO"
-        void gameover();         // Ends the game
         void msg_buffer();       // Opens a window with old messages in it
         void draw_minimap();     // Draw the 5x5 minimap
         void draw_HP();          // Draws the player's HP and Power level
@@ -929,7 +928,7 @@ private:
         int remoteveh_cache_turn;
         vehicle *remoteveh_cache;
 
-        special_game *gamemode;
+        std::unique_ptr<special_game> gamemode;
 
         int moveCount; //Times the player has moved (not pause, sleep, etc)
         int user_action_counter; // Times the user has input an action
@@ -945,15 +944,6 @@ private:
 
         void move_save_to_graveyard();
         bool save_player_data();
-
-        /** Options can be specified by mods from JSON using GAME_OPTION */
-        void load_game_option( JsonObject& jo );
-        std::set<std::string> options;
-
-    public:
-        bool has_option( const std::string& opt ) {
-            return options.count( opt );
-        }
 };
 
 #endif

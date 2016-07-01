@@ -253,7 +253,7 @@ void advanced_inventory::print_items( advanced_inventory_pane &pane, bool active
             int maxvolume = 0;
             auto &s = squares[pane.get_area()];
             if( pane.get_area() == AIM_CONTAINER && s.get_container(pane.in_vehicle()) != nullptr ) {
-                maxvolume = s.get_container(pane.in_vehicle())->type->container->contains;
+                maxvolume = s.get_container(pane.in_vehicle())->get_container_capacity();
             } else if( pane.in_vehicle() ) {
                 maxvolume = s.veh->max_volume( s.vstor );
             } else {
@@ -735,7 +735,7 @@ advanced_inv_listitem::advanced_inv_listitem( item *an_item, int index, int coun
         aim_location _area, bool from_veh )
     : idx( index )
     , area( _area )
-    , id(an_item->type->id)
+    , id(an_item->typeId())
     , name( an_item->tname( count ) )
     , name_without_prefix( an_item->tname( 1, false ) )
     , autopickup( get_auto_pickup().has_rule( an_item->tname( 1, false ) ) )
@@ -753,7 +753,7 @@ advanced_inv_listitem::advanced_inv_listitem(const std::list<item*> &list, int i
             aim_location loc, bool veh) :
     idx(index),
     area(loc),
-    id(list.front()->type->id),
+    id(list.front()->typeId()),
     items(list),
     name(list.front()->tname(list.size())),
     name_without_prefix(list.front()->tname(1, false)),
@@ -841,7 +841,7 @@ static itemstack i_stacked(T items)
     std::unordered_map<itype_id, std::set<int>> cache;
     // iterate through and create stacks
     for(auto &elem : items) {
-        const auto &id = elem.type->id;
+        const auto id = elem.typeId();
         auto iter = cache.find(id);
         bool got_stacked = false;
         // cache entry exists
@@ -1564,10 +1564,15 @@ void advanced_inventory::display()
                 // only remove item or charges if the add succeeded
                 if(items_left == 0) {
                     if(by_charges) {
-                        // `amount_to_move' will be `true' if the item needs to be removed
-                        amount_to_move = sitem->items.front()->reduce_charges(amount_to_move);
+                        item *it = sitem->items.front();
+                        if( it->charges <= amount_to_move ) {
+                            remove_item( *sitem, 1 );
+                        } else {
+                            it->mod_charges( -amount_to_move );
+                        }
+                    } else {
+                        remove_item(*sitem, amount_to_move);
                     }
-                    remove_item(*sitem, amount_to_move);
                 // note to the player (and possibly debug) that the item transfer failed somehow
                 } else {
                     const char *msg = nullptr;
@@ -1976,7 +1981,7 @@ bool advanced_inventory::move_content( item &src_container, item &dest_container
         return false;
     }
 
-    if ( !src_container.is_sealable_container() ) {
+    if( src_container.is_non_resealable_container() ) {
         long max_charges = dest_container.get_remaining_capacity_for_liquid( src );
         if ( src.charges > max_charges ) {
             popup( _( "You can't partially unload liquids from unsealable container." ) );
@@ -1986,10 +1991,12 @@ bool advanced_inventory::move_content( item &src_container, item &dest_container
 
     std::string err;
     // @todo Allow buckets here, but require them to be on the ground or wielded
-    if( !dest_container.fill_with( src, err, false ) ) {
+    const long amount = dest_container.get_remaining_capacity_for_liquid( src, err, false );
+    if( !err.empty() ) {
         popup( err.c_str() );
         return false;
     }
+    dest_container.fill_with( src, amount );
 
     uistate.adv_inv_container_content_type = dest_container.contents.front().typeId();
     if( src.charges <= 0 ) {
@@ -2061,7 +2068,7 @@ bool advanced_inventory::query_charges( aim_location destarea, const advanced_in
     if( destarea == AIM_INVENTORY  || destarea == AIM_WORN ) {
         const long unitweight = it.weight() * 1000 / ( by_charges ? it.charges : 1 );
         const long max_weight = ( g->u.weight_capacity() * 4 - g->u.weight_carried() ) * 1000;
-        if( unitweight > 0 && unitweight * amount > max_weight ) {
+        if( unitweight > 0 && ( unitweight * amount > max_weight ) ) {
             const long weightmax = max_weight / unitweight;
             if( weightmax <= 0 ) {
                 popup( _( "This is too heavy!." ) );

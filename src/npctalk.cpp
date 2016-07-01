@@ -1,4 +1,5 @@
 #include "npc.h"
+#include "npc_class.h"
 #include "output.h"
 #include "game.h"
 #include "map.h"
@@ -305,10 +306,11 @@ void npc::talk_to_u()
 
     moves -= 100;
 
-    if(g->u.is_deaf()) {
-        if(d.topic_stack.back() == "TALK_MUG") {
+    if( g->u.is_deaf() ) {
+        if( d.topic_stack.back() == "TALK_MUG" ||
+            d.topic_stack.back() == "TALK_STRANGER_AGGRESSIVE" ) {
             make_angry();
-            d.topic_stack.push_back("TALK_DEAF_MUG");
+            d.topic_stack.push_back("TALK_DEAF_ANGRY");
         } else {
             d.topic_stack.push_back("TALK_DEAF");
         }
@@ -358,7 +360,7 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
     if ( topic == "TALK_DEAF" ) {
         return _("&You are deaf and can't talk.");
 
-    } else if ( topic == "TALK_DEAF_MUG" ) {
+    } else if ( topic == "TALK_DEAF_ANGRY" ) {
         return string_format(_("&You are deaf and can't talk. When you don't respond, %s becomes angry!"),
                 beta->name.c_str());
     }
@@ -1157,9 +1159,6 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
         return _("How should I aim?");
 
     } else if( topic == "TALK_STRANGER_NEUTRAL" ) {
-        if (p->myclass == NC_TRADER) {
-            return _("Hello!  Would you care to see my goods?");
-        }
         return _("Hello there.");
 
     } else if( topic == "TALK_STRANGER_WARY" ) {
@@ -1169,9 +1168,6 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
         return _("Keep your distance!");
 
     } else if( topic == "TALK_STRANGER_FRIENDLY" ) {
-        if (p->myclass == NC_TRADER) {
-            return _("Hello!  Would you care to see my goods?");
-        }
         return _("Hey there, <name_g>.");
 
     } else if( topic == "TALK_STRANGER_AGGRESSIVE" ) {
@@ -1205,42 +1201,7 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
             case NPC_MISSION_GUARD:
                 return _("I'm guarding this location.");
             case NPC_MISSION_NULL:
-                switch (p->myclass) {
-                    case NC_SHOPKEEP:
-                        return _("I'm a local shopkeeper.");
-                    case NC_EVAC_SHOPKEEP:
-                        return _("I'm a local shopkeeper.");
-                    case NC_HACKER:
-                        return _("I'm looking for some choice systems to hack.");
-                    case NC_DOCTOR:
-                        return _("I'm looking for wounded to help.");
-                    case NC_TRADER:
-                        return _("I'm collecting gear and selling it.");
-                    case NC_NINJA: // TODO: implement this
-                        return _("I'm a wandering master of martial arts but I'm currently not implemented in the code.");
-                    case NC_COWBOY:
-                        return _("Just looking for some wrongs to right.");
-                    case NC_SCIENTIST:
-                        return _("I'm looking for clues concerning these monsters' origins...");
-                    case NC_BOUNTY_HUNTER:
-                        return _("I'm a killer for hire.");
-                    case NC_THUG:
-                        return _("I'm just here for the paycheck.");
-                    case NC_SCAVENGER:
-                        return _("I'm just trying to survive.");
-                    case NC_ARSONIST:
-                        return _("I'm just watching the world burn.");
-                    case NC_HUNTER:
-                        return _("I'm tracking game.");
-                    case NC_BARTENDER:
-                        return _("I'm looking for new drink recipes.");
-                    case NC_MAX:
-                        return _("I should not be able to exist!");
-                    case NC_NONE:
-                        return _("I'm just wandering.");
-                    default:
-                        return "ERROR: Someone forgot to code an npc_class text.";
-                } // switch (p->myclass)
+                return p->myclass.obj().get_job_description();
             default:
                 return "ERROR: Someone forgot to code an npc_mission text.";
         } // switch (p->mission)
@@ -1370,6 +1331,12 @@ std::string dialogue::dynamic_line( const std::string &topic ) const
             status << string_format(_(" %s will smash nearby zombie corpses."), npcstr.c_str());
         } else {
             status << string_format(_(" %s will leave zombie corpses intact."), npcstr.c_str());
+        }
+
+        if( p->rules.close_doors ) {
+            status << string_format(_(" %s will close doors behind themselves."), npcstr.c_str());
+        } else {
+            status << string_format(_(" %s will leave doors open."), npcstr.c_str());
         }
 
         return status.str();
@@ -1583,8 +1550,7 @@ void dialogue::gen_responses( const std::string &topic )
                 SUCCESS_ACTION(&talk_function::clear_mission);
         add_response( _("How about some items as payment?"), "TALK_MISSION_REWARD",
                       &talk_function::mission_reward );
-        if((!p->skills_offered_to(g->u).empty() || !p->styles_offered_to(g->u).empty())
-              && p->myclass != NC_EVAC_SHOPKEEP) {
+        if( !p->skills_offered_to(g->u).empty() || !p->styles_offered_to(g->u).empty() ) {
             RESPONSE(_("Maybe you can teach me something as payment."));
                 SUCCESS("TALK_TRAIN");
         }
@@ -2647,6 +2613,9 @@ void dialogue::gen_responses( const std::string &topic )
             add_response( p->rules.allow_pulp ? _("Leave corpses alone.") : _("Smash zombie corpses."),
                           "TALK_MISC_RULES", &talk_function::toggle_allow_pulp );
 
+            add_response( p->rules.close_doors ? _("Leave doors open.") : _("Close the doors."),
+                          "TALK_MISC_RULES", &talk_function::toggle_close_doors );
+
             add_response_none( _("Never mind.") );
 
     }
@@ -3053,6 +3022,11 @@ void talk_function::toggle_allow_complain( npc *p )
 void talk_function::toggle_allow_pulp( npc *p )
 {
     p->rules.allow_pulp = !p->rules.allow_pulp;
+}
+
+void talk_function::toggle_close_doors( npc *p )
+{
+    p->rules.close_doors = !p->rules.close_doors;
 }
 
 void talk_function::reveal_stats (npc *p)
@@ -4409,8 +4383,7 @@ consumption_result try_consume( npc &p, item &it, std::string &reason )
         return REFUSED;
     }
 
-    if( ( !it.type->use_methods.empty() || comest->quench < 0 || it.poison > 0 ) &&
-        !p.is_minion() && !g->u.has_trait( "DEBUG_MIND_CONTROL" ) ) {
+    if( !p.will_accept_from_player( it ) ) {
         reason = _("I don't <swear> trust you enough to eat from your hand...");
         return REFUSED;
     }
@@ -4493,45 +4466,19 @@ std::string give_item_to( npc &p, bool allow_use, bool allow_carry )
         }
     }
 
-    long our_ammo = 0;
-    if( p.weapon.is_gun() ) {
-        our_ammo = p.weapon.charges;
-        const auto other_ammo = p.get_ammo( p.weapon.ammo_type() );
-        for( const auto &amm : other_ammo ) {
-            our_ammo += amm->charges;
-        }
-    }
-
     bool taken = false;
-    const double new_melee_value = p.melee_value( given );
-    double new_weapon_value = new_melee_value;
+    long our_ammo = p.ammo_count_for( p.weapon );
+    long new_ammo = p.ammo_count_for( given );
+    const double new_weapon_value = p.weapon_value( given, new_ammo );
     const double cur_weapon_value = p.weapon_value( p.weapon, our_ammo );
     if( allow_use ) {
         add_msg( m_debug, "NPC evaluates own %s (%d ammo): %0.1f",
                  p.weapon.tname().c_str(), our_ammo, cur_weapon_value );
-        add_msg( m_debug, "NPC evaluates your %s as melee weapon: %0.1f",
-                 given.tname().c_str(), new_melee_value );
-        if( new_melee_value > cur_weapon_value ) {
+        add_msg( m_debug, "NPC evaluates your %s (%d ammo): %0.1f",
+                 given.tname().c_str(), new_ammo, new_weapon_value );
+        if( new_weapon_value > cur_weapon_value ) {
             p.wield( given );
             taken = true;
-        }
-
-        if( !taken && given.is_gun() ) {
-            // Don't take guns for which we have no ammo, even if they look cool
-            int ammo_count = given.charges;
-            const auto other_ammo = p.get_ammo( given.ammo_type() );
-            for( const auto &amm : other_ammo ) {
-                ammo_count += amm->charges;
-            }
-            // TODO: Flamethrowers (why would player give a NPC one anyway?) and other multi-charge guns
-            new_weapon_value = p.weapon_value( given, ammo_count );
-
-            add_msg( m_debug, "NPC evaluates your %s (%d ammo): %0.1f",
-                     given.tname().c_str(), ammo_count, new_weapon_value );
-            if( new_weapon_value > cur_weapon_value ) {
-                p.wield( given );
-                taken = true;
-            }
         }
 
         // is_gun here is a hack to prevent NPCs wearing guns if they don't want to use them

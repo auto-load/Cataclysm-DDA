@@ -4,6 +4,7 @@
 #include "game.h"
 #include "map.h"
 #include "map_iterator.h"
+#include "projectile.h"
 #include "line.h"
 #include "debug.h"
 #include "overmapbuffer.h"
@@ -16,6 +17,8 @@
 #include "mtype.h"
 #include "field.h"
 #include "sounds.h"
+
+#include <algorithm>
 
 #define dbg(x) DebugLog((DebugLevel)(x),D_NPC) << __FILE__ << ":" << __LINE__ << ": "
 #define TARGET_NONE INT_MIN
@@ -619,14 +622,7 @@ void npc::execute_action( npc_action action )
         break;
 
     case npc_mug_player:
-        update_path( g->u.pos() );
-        if (path.size() == 1) { // We're adjacent to u, and thus can mug u
-            mug_player(g->u);
-        } else if (!path.empty()) {
-            move_to_next();
-        } else {
-            move_pause();
-        }
+        mug_player(g->u);
         break;
 
     case npc_goto_destination:
@@ -799,6 +795,8 @@ npc_action npc::method_of_attack()
     // TODO: Change the in_vehicle check to actual "are we driving" check
     const bool dont_move = in_vehicle || rules.engagement == ENGAGE_NO_MOVE;
 
+    long ups_charges = charges_of( "UPS" );
+
     // get any suitable modes excluding melee, any forbiden to NPCs and those without ammo
     // if we require a silent weapon inappropriate modes are also removed
     // except in emergency only fire bursts if danger > 0.5 and don't shoot at all at harmless targets
@@ -814,6 +812,7 @@ npc_action npc::method_of_attack()
             const auto &m = e.second;
             return m.melee() || m.flags.count( "NPC_AVOID" ) ||
                    !m->ammo_sufficient( m.qty ) || !can_use( *m.target ) ||
+                   m->get_gun_ups_drain() > ups_charges ||
                    ( danger <= ( ( m.qty == 1 ) ? 0.0 : 0.5 ) && !emergency() ) ||
                    ( rules.use_silent && is_following() && !m.target->is_silent() );
 
@@ -933,7 +932,7 @@ item &npc::find_reloadable()
     item *reloadable = nullptr;
     visit_items( [this, &reloadable]( item *node ) {
         if( !wants_to_reload( *this, *node ) ) {
-            return VisitResponse::SKIP;
+            return VisitResponse::NEXT;
         }
         const auto it_loc = node->pick_reload_ammo( *this ).ammo;
         if( it_loc && wants_to_reload_with( *node, *it_loc ) ) {
@@ -941,7 +940,7 @@ item &npc::find_reloadable()
             return VisitResponse::ABORT;
         }
 
-        return VisitResponse::SKIP;
+        return VisitResponse::NEXT;
     } );
 
     if( reloadable != nullptr ) {
@@ -1016,6 +1015,10 @@ npc_action npc::address_needs( int danger )
             move_to_next();
         }
 
+        return npc_noop;
+    }
+
+    if( danger <= NPC_DANGER_VERY_LOW && adjust_worn() ) {
         return npc_noop;
     }
 
@@ -1144,7 +1147,7 @@ int npc::choose_escape_item()
         item &it = slice[i]->front();
         for (int j = 0; j < NUM_ESCAPE_ITEMS; j++) {
             const auto food = it.type->comestible.get();
-            if (it.type->id == ESCAPE_ITEMS[j] &&
+            if (it.typeId() == ESCAPE_ITEMS[j] &&
                 (food == NULL || stim < food->stim ||            // Avoid guzzling down
                  (food->stim >= 10 && stim < food->stim * 2)) && //  Adderall etc.
                 (j > best || (j == best && it.charges < slice[ret]->front().charges))) {
@@ -1497,7 +1500,8 @@ void npc::move_to( const tripoint &pt, bool no_bashing )
 
     // Boarding moving vehicles is fine, unboarding isn't
     bool moved = false;
-    const vehicle *veh = g->m.veh_at( pos() );
+    int vpart;
+    vehicle *veh = g->m.veh_at( pos(), vpart );
     if( veh != nullptr ) {
         int other_part = -1;
         const vehicle *oveh = g->m.veh_at( p, other_part );
@@ -1536,7 +1540,7 @@ void npc::move_to( const tripoint &pt, bool no_bashing )
         }
     } else if( !no_bashing && smash_ability() > 0 && g->m.is_bashable( p ) &&
                g->m.bash_rating( smash_ability(), p ) > 0 ) {
-        moves -= int(weapon.is_null() ? 80 : weapon.attack_time() * 0.8);
+        moves -= is_armed() ? 80 : weapon.attack_time() * 0.8;
         g->m.bash( p, smash_ability() );
     } else {
         if( attitude == NPCATT_MUG ||
@@ -1551,6 +1555,19 @@ void npc::move_to( const tripoint &pt, bool no_bashing )
     if( moved ) {
         if( in_vehicle ) {
             g->m.unboard_vehicle( pos() );
+        }
+
+        // Close doors behind self (if you can)
+        if( is_friend() && rules.close_doors ) {
+            if( veh != nullptr ) {
+                vpart = veh->next_part_to_close( vpart );
+                if( vpart >= 0 ) {
+                    veh->close( vpart );
+                    mod_moves( -90 );
+                }
+            } else if( g->m.close_door( pos(), !g->m.is_outside( p ), false ) ) {
+                mod_moves( -90 );
+            }
         }
 
         setpos( p );
@@ -2108,41 +2125,51 @@ bool npc::wield_better_weapon()
     item *best = &weapon;
     double best_value = -100.0;
 
+    const long ups_charges = charges_of( "UPS" );
+
     const auto compare_weapon =
-        [this, &best, &best_value, can_use_gun, use_silent]( item &it, bool allow_ranged ) {
-        double val = allow_ranged ? weapon_value( it ) : melee_value( it );
+        [this, &best, &best_value, ups_charges, can_use_gun, use_silent]( item &it ) {
+        bool allowed = can_use_gun && it.is_gun() && ( !use_silent || it.is_silent() );
+        double val;
+        if( !allowed ) {
+            val = weapon_value( it, 0 );
+        } else {
+            long ammo_count = it.ammo_remaining();
+            long ups_drain = it.get_gun_ups_drain();
+            if( ups_drain > 0 ) {
+                ammo_count = std::min( ammo_count, ups_charges / ups_drain );
+            }
+
+            val = weapon_value( it, ammo_count );
+        }
+
         if( val > best_value ) {
             best = &it;
             best_value = val;
         }
     };
 
-    compare_weapon( weapon, can_use_gun );
+    compare_weapon( weapon );
     // To prevent changing to barely better stuff
-    best_value *= 1.1;
+    best_value *= std::max<float>( 1.0f, ai_cache.danger_assessment / 10.0f );
 
-    std::vector<item *> empty_guns;
-    visit_items( [this, &compare_weapon, &empty_guns, can_use_gun, use_silent]( item *node ) {
+    // Fists aren't checked below
+    compare_weapon( ret_null );
+
+    visit_items( [this, &compare_weapon]( item *node ) {
         // Skip some bad items
         if( !node->is_gun() && node->type->melee_dam + node->type->melee_cut < 5 ) {
             return VisitResponse::SKIP;
         }
 
-        bool allowed = can_use_gun && node->is_gun() && ( !use_silent || node->is_silent() );
-        if( allowed && node->ammo_remaining() >= node->ammo_required() ) {
-            compare_weapon( *node, true );
-        } else if( allowed && enough_time_to_reload( *node ) ) {
-            empty_guns.push_back( node );
-        } else {
-            compare_weapon( *node, false );
-        }
+        compare_weapon( *node );
 
         return VisitResponse::SKIP;
     } );
 
-    for( auto &i : empty_guns ) {
-        compare_weapon( *i, find_usable_ammo( *i ) );
-    }
+    // @todo Reimplement switching to empty guns
+    // Needs to check reload speed, RELOAD_ONE etc.
+    // Until then, the NPCs should reload the guns as a last resort
 
     if( best == &weapon ) {
         add_msg( m_debug, "Wielded %s is best at %.1f, not switching",
@@ -2218,13 +2245,13 @@ void npc::alt_attack()
 
     int weapon_index = INT_MIN;
     item *used = nullptr;
-    if (weapon.type->id == which) {
+    if (weapon.typeId() == which) {
         used = &weapon;
         weapon_index = -1;
     } else {
         invslice slice = inv.slice();
         for (size_t i = 0; i < inv.size(); i++) {
-            if (slice[i]->front().type->id == which) {
+            if (slice[i]->front().typeId() == which) {
                 used = &(slice[i]->front());
                 weapon_index = i;
             }
@@ -2358,7 +2385,7 @@ void npc::activate_item(int item_index)
 
 bool thrown_item( item &used )
 {
-    const itype_id &type = used.type->id;
+    const itype_id type = used.typeId();
     // TODO: Remove the horrid hardcode
     return (used.active || type == "knife_combat" || type == "spear_wood");
 }
@@ -2564,6 +2591,10 @@ bool npc::consume_food()
 
 void npc::mug_player(player &mark)
 {
+    if( mark.is_armed() ) {
+        make_angry();
+    }
+
     if( rl_dist( pos(), mark.pos() ) > 1 ) { // We have to travel
         update_path( mark.pos() );
         move_to_next();
@@ -3068,4 +3099,48 @@ void npc::do_reload( item &it )
         sfx::play_variant_sound( "reload", it.typeId(), sfx::get_heard_volume( pos() ),
                                  sfx::get_heard_angle( pos() ) );
     }
+
+    // Otherwise the NPC may not equip the weapon until they see danger
+    has_new_items = true;
+}
+
+bool covers_broken( const Character &who, const item &it )
+{
+    const auto covered = it.get_covered_body_parts();
+    for( size_t i = 0; i < num_hp_parts; i++ ) {
+        
+        if( who.hp_cur[ i ] <= 0 && covered[ player::hp_to_bp( hp_part( i ) ) ] ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool npc::adjust_worn()
+{
+    // Currently just splints
+    const std::string splint_string( "SPLINT" );
+    for( auto &it : worn ) {
+        if( !it.has_flag( splint_string ) ) {
+            continue;
+        }
+
+        // If the split is covering a broken part, let it stay there
+        bool any_broken = covers_broken( *this, it );
+        if( any_broken ) {
+            continue;
+        }
+
+        // Not covering any broken part, see if we have any on opposite side
+        it.set_side( it.get_side() == LEFT ? RIGHT : LEFT );
+        any_broken = covers_broken( *this, it );
+        if( !any_broken ) {
+            if( takeoff( &it ) ) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }

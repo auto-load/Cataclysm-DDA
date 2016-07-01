@@ -35,7 +35,8 @@ static const std::string fake_recipe_book = "book";
 void remove_from_component_lookup( recipe *r );
 
 recipe::recipe() :
-    result( "null" ), contained( false ), skill_used( NULL_ID ), reversible( false ),
+    result( "null" ), contained( false ), container( "null" ),
+    skill_used( NULL_ID ), reversible( false ),
     autolearn_requirements(), learn_by_disassembly(), result_mult( 1 )
 {
 }
@@ -72,7 +73,9 @@ void load_recipe( JsonObject &jsobj )
     int difficulty = jsobj.get_int( "difficulty" );
 
     // optional
-    bool contained = jsobj.get_bool( "contained", false );
+    std::string container = jsobj.get_string( "container", "null" );
+    bool contained = jsobj.get_bool( "contained", container != "null" );
+
     std::string subcategory = jsobj.get_string( "subcategory", "" );
     bool reversible = jsobj.get_bool( "reversible", false );
     skill_id skill_used( jsobj.get_string( "skill_used", skill_id::NULL_ID.str() ) );
@@ -167,6 +170,7 @@ void load_recipe( JsonObject &jsobj )
     rec->byproducts = bps;
     rec->cat = category;
     rec->contained = contained;
+    rec->container = container;
     rec->subcat = subcategory;
     rec->skill_used = skill_used;
     for( const auto &elem : requires_skills ) {
@@ -184,7 +188,14 @@ void load_recipe( JsonObject &jsobj )
     rec->result_mult = result_mult;
     rec->flags = jsobj.get_tags( "flags" );
 
-    rec->requirements.load( jsobj );
+    if( jsobj.has_string( "using" ) ) {
+        rec->requirements = requirement_id( jsobj.get_string( "using" ) );
+
+    } else {
+        auto req_id = std::string( "inline_recipe_" ) += rec_name;
+        requirement_data::load_requirement( jsobj, req_id );
+        rec->requirements = requirement_id( req_id );
+    }
 
     jsarr = jsobj.get_array( "book_learn" );
     while( jsarr.has_more() ) {
@@ -208,17 +219,21 @@ void reset_recipes()
 
 void finalize_recipes()
 {
+    recipe_dict.finalize();
+
+    std::ostringstream buffer;
     for( auto r : recipe_dict ) {
+        buffer.clear();
         for( auto j = r->booksets.begin(); j != r->booksets.end(); ++j ) {
             const std::string &book_id = j->book_id;
             if( !item::type_is_defined( book_id ) ) {
-                debugmsg( "book %s for recipe %s does not exist", book_id.c_str(), r->ident().c_str() );
+                buffer << "book " << book_id << " for recipe " << r->ident() << " does not exist" << "\n";
                 continue;
             }
             const itype *t = item::find_type( book_id );
             if( !t->book ) {
                 // TODO: we could make up a book slot?
-                debugmsg( "book %s for recipe %s is not a book", book_id.c_str(), r->ident().c_str() );
+                buffer << "book " << book_id << " for recipe " << r->ident() << " is not a book" << "\n";
                 continue;
             }
             islot_book::recipe_with_description_t rwd{ r, j->skill_level, "", j->hidden };
@@ -230,6 +245,39 @@ void finalize_recipes()
             t->book->recipes.insert( rwd );
         }
         r->booksets.clear();
+
+        if( !item::type_is_defined( r->result ) ) {
+            buffer << "Recipe " << r->ident() << " defines invalid result " << r->result << "\n";
+        }
+
+        for( const auto &bp : r->byproducts ) {
+            if( !item::type_is_defined( bp.result ) ) {
+                buffer << "Recipe " << r->ident() << " defines invalid byproduct " << bp.result << "\n";
+            }
+        }
+
+        if( !r->contained && r->container != "null" ) {
+            buffer << "Recipe " << r->ident() << " defines container " << r->container << ", but not contained"
+                   << "\n";
+        }
+
+        if( r->contained && r->container == "null" ) {
+            r->container = item::find_type( r->result )->default_container;
+        }
+
+        if( !item::type_is_defined( r->container ) ) {
+            buffer << "Recipe " << r->ident() << " defines container " << r->container <<
+                   ", which is not defined" << "\n";
+        }
+
+        if( r->result_mult != 1 && !item::find_type( r->result )->count_by_charges() ) {
+            buffer << "Recipe " << r->ident() << " has result_mult " << r->result_mult <<
+                   ", but result " << r->result << " is not count_by_charges" << "\n";
+        }
+
+        if( !buffer.str().empty() ) {
+            debugmsg( "%s", buffer.str().c_str() );
+        }
     }
 }
 
@@ -296,7 +344,6 @@ void player::recraft()
 {
     if( lastrecipe.empty() ) {
         popup( _( "Craft something first" ) );
-        g->refresh_all();
     } else if( making_would_work( lastrecipe, last_batch ) ) {
         last_craft.execute();
     }
@@ -323,7 +370,7 @@ bool player::making_would_work( const std::string &id_to_make, int batch_size )
     if( !can_make( making, batch_size ) ) {
         std::ostringstream buffer;
         buffer << _( "You can no longer make that craft!" ) << "\n";
-        buffer << making->requirements.list_missing();
+        buffer << making->requirements->list_missing();
         popup( buffer.str(), PF_NONE );
         return false;
     }
@@ -368,7 +415,7 @@ bool recipe::check_eligible_containers_for_crafting( int batch ) const
         if( charges_to_store > 0 ) {
             vehicle *veh = g->m.veh_at( g->u.pos() );
             if( veh != NULL ) {
-                const itype_id &ftype = prod.type->id;
+                const itype_id &ftype = prod.typeId();
                 int fuel_cap = veh->fuel_capacity( ftype );
                 int fuel_amnt = veh->fuel_left( ftype );
 
@@ -463,7 +510,7 @@ bool recipe::can_make_with_inventory( const inventory &crafting_inv, int batch )
     if( !g->u.knows_recipe( this ) && -1 == g->u.has_recipe( this, crafting_inv ) ) {
         return false;
     }
-    return requirements.can_make_with_inventory( crafting_inv, batch );
+    return requirements->can_make_with_inventory( crafting_inv, batch );
 }
 
 bool recipe::valid_learn() const
@@ -595,7 +642,7 @@ item recipe::create_result() const
 {
     item newit( result, calendar::turn, item::default_charges_tag{} );
     if( contained == true ) {
-        newit = newit.in_its_container();
+        newit = newit.in_container( container );
     }
     if( result_mult != 1 ) {
         newit.charges *= result_mult;
@@ -613,7 +660,7 @@ std::vector<item> recipe::create_results( int batch ) const
 {
     std::vector<item> items;
 
-    if( !item::count_by_charges( result ) ) {
+    if( contained || !item::count_by_charges( result ) ) {
         for( int i = 0; i < batch; i++ ) {
             item newit = create_result();
             items.push_back( newit );
@@ -631,7 +678,7 @@ std::vector<item> recipe::create_byproducts( int batch ) const
 {
     std::vector<item> bps;
     for( auto &val : byproducts ) {
-        if( !item::count_by_charges( val.result ) ) {
+        if( !contained || !item::count_by_charges( val.result ) ) {
             for( int i = 0; i < val.amount * batch; i++ ) {
                 item newit( val.result, calendar::turn, item::default_charges_tag{} );
                 if( !newit.craft_has_charges() ) {
@@ -782,10 +829,10 @@ void player::complete_craft()
             last_craft.consume_components();
         } else {
             // @todo Guarantee that selections are cached
-            for( const auto &it : making->requirements.get_components() ) {
+            for( const auto &it : making->requirements->get_components() ) {
                 consume_items( it, batch_size );
             }
-            for( const auto &it : making->requirements.get_tools() ) {
+            for( const auto &it : making->requirements->get_tools() ) {
                 consume_tools( it, batch_size );
             }
         }
@@ -809,11 +856,11 @@ void player::complete_craft()
         // Meaning there are still cases where has_cached_selections will be false
         // @todo Allow saving last_craft and debugmsg+fail craft if selection isn't cached
         if( !has_trait( "DEBUG_HS" ) ) {
-            for( const auto &it : making->requirements.get_components() ) {
+            for( const auto &it : making->requirements->get_components() ) {
                 std::list<item> tmp = consume_items( it, batch_size );
                 used.splice( used.end(), tmp );
             }
-            for( const auto &it : making->requirements.get_tools() ) {
+            for( const auto &it : making->requirements->get_tools() ) {
                 consume_tools( it, batch_size );
             }
         }
@@ -1239,7 +1286,7 @@ bool player::can_disassemble( const item &dis_item, const inventory &crafting_in
     }
 
     for( auto cur_recipe : recipe_dict ) {
-        if( dis_item.type->id == cur_recipe->result && cur_recipe->reversible ) {
+        if( dis_item.typeId() == cur_recipe->result && cur_recipe->reversible ) {
             return can_disassemble( dis_item, cur_recipe, crafting_inv, print_msg );
         }
     }
@@ -1266,7 +1313,7 @@ bool player::can_disassemble( const item &dis_item, const recipe *cur_recipe,
     }
 
     bool have_all_qualities = true;
-    const auto &dis_requirements = cur_recipe->requirements.disassembly_requirements();
+    const auto &dis_requirements = cur_recipe->requirements->disassembly_requirements();
     for( const auto &itq : dis_requirements.get_qualities() ) {
         for( const auto &it : itq ) {
             if( !it.has( crafting_inv ) ) {
@@ -1344,7 +1391,7 @@ bool player::disassemble( int dis_pos )
 bool player::disassemble( item &dis_item, int dis_pos,
                           bool ground, bool msg_and_query )
 {
-    const recipe *cur_recipe = get_disassemble_recipe( dis_item.type->id );
+    const recipe *cur_recipe = get_disassemble_recipe( dis_item.typeId() );
 
     // No disassembly without proper light
     // But book-ripping is OK
@@ -1576,7 +1623,7 @@ void player::complete_disassemble( int item_pos, const tripoint &loc,
                                    bool from_ground, const recipe &dis )
 {
     // Get the proper recipe - the one for disassembly, not assembly
-    const auto dis_requirements = dis.requirements.disassembly_requirements();
+    const auto dis_requirements = dis.requirements->disassembly_requirements();
     item &org_item = get_item_for_uncraft( *this, item_pos, loc, from_ground );
     if( org_item.is_null() ) {
         add_msg( _( "The item has vanished." ) );
@@ -1584,7 +1631,7 @@ void player::complete_disassemble( int item_pos, const tripoint &loc,
         return;
     }
 
-    if( org_item.type->id != dis.result ) {
+    if( org_item.typeId() != dis.result ) {
         add_msg( _( "The item might be gone, at least it is not at the expected position anymore." ) );
         activity.type = ACT_NULL;
         return;
@@ -1727,8 +1774,10 @@ void check_recipe_definitions()
 {
     for( auto &elem : recipe_dict ) {
         const recipe &r = *elem;
-        const std::string display_name = std::string( "recipe " ) + r.ident();
-        r.requirements.check_consistency( display_name );
+        if( !r.requirements.is_valid() ) {
+            debugmsg( "recipe %s has missing requirement data %s",
+                      r.ident().c_str(), r.requirements.c_str() );
+        }
         if( !item::type_is_defined( r.result ) ) {
             debugmsg( "result %s in recipe %s is not a valid item template", r.result.c_str(),
                       r.ident().c_str() );
@@ -1781,10 +1830,10 @@ void remove_ammo( item *dis_item, player &p )
         drop_or_handle( ammodrop, p );
         dis_item->charges = 0;
     }
-    if( dis_item->is_tool() && dis_item->charges > 0 && dis_item->ammo_type() != "NULL" ) {
+    if( dis_item->is_tool() && dis_item->charges > 0 && dis_item->ammo_type() ) {
         item ammodrop( default_ammo( dis_item->ammo_type() ), calendar::turn );
         ammodrop.charges = dis_item->charges;
-        if( dis_item->ammo_type() == "plutonium" ) {
+        if( dis_item->ammo_type() == ammotype( "plutonium" ) ) {
             ammodrop.charges /= PLUTONIUM_CHARGES;
         }
         drop_or_handle( ammodrop, p );

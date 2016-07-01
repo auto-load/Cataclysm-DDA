@@ -101,6 +101,7 @@ SET(CATACLYSM_DDA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/melee.cpp
     ${CMAKE_SOURCE_DIR}/src/defense.cpp
     ${CMAKE_SOURCE_DIR}/src/npc.cpp
+    ${CMAKE_SOURCE_DIR}/src/npc_class.cpp
     ${CMAKE_SOURCE_DIR}/src/text_snippets.cpp
     ${CMAKE_SOURCE_DIR}/src/pickup.cpp
     ${CMAKE_SOURCE_DIR}/src/mapbuffer.cpp
@@ -158,6 +159,7 @@ SET(CATACLYSM_DDA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/iuse.cpp
     ${CMAKE_SOURCE_DIR}/src/crafting.cpp
     ${CMAKE_SOURCE_DIR}/src/pathfinding.cpp
+    ${CMAKE_SOURCE_DIR}/src/projectile.cpp
     ${CMAKE_SOURCE_DIR}/src/mission_companion.cpp
     ${CMAKE_SOURCE_DIR}/src/recipe_dictionary.cpp
     ${CMAKE_SOURCE_DIR}/src/craft_command.cpp
@@ -171,6 +173,7 @@ SET(CATACLYSM_DDA_SOURCES
     ${CMAKE_SOURCE_DIR}/src/fault.cpp
     ${CMAKE_SOURCE_DIR}/src/dump.cpp
     ${CMAKE_SOURCE_DIR}/src/overlay_ordering.cpp
+    ${CMAKE_SOURCE_DIR}/src/turret.cpp
 )
 
 SET (CATACLYSM_DDA_HEADERS
@@ -198,6 +201,7 @@ SET (CATACLYSM_DDA_HEADERS
     ${CMAKE_SOURCE_DIR}/src/item_location.h
     ${CMAKE_SOURCE_DIR}/src/map.h
     ${CMAKE_SOURCE_DIR}/src/npc.h
+    ${CMAKE_SOURCE_DIR}/src/npc_class.h
     ${CMAKE_SOURCE_DIR}/src/npc_favor.h
     ${CMAKE_SOURCE_DIR}/src/rng.h
     ${CMAKE_SOURCE_DIR}/src/compatibility.h
@@ -244,6 +248,7 @@ SET (CATACLYSM_DDA_HEADERS
     ${CMAKE_SOURCE_DIR}/src/coordinates.h
     ${CMAKE_SOURCE_DIR}/src/coordinate_conversions.h
     ${CMAKE_SOURCE_DIR}/src/field.h
+    ${CMAKE_SOURCE_DIR}/src/fire.h
     ${CMAKE_SOURCE_DIR}/src/monstergenerator.h
     ${CMAKE_SOURCE_DIR}/src/monfaction.h
     ${CMAKE_SOURCE_DIR}/src/event.h
@@ -313,6 +318,7 @@ SET (CATACLYSM_DDA_HEADERS
     ${CMAKE_SOURCE_DIR}/src/profession.h
     ${CMAKE_SOURCE_DIR}/src/path_info.h
     ${CMAKE_SOURCE_DIR}/src/pathfinding.h
+    ${CMAKE_SOURCE_DIR}/src/projectile.h
     ${CMAKE_SOURCE_DIR}/src/version.h
     ${CMAKE_SOURCE_DIR}/src/input.h
     ${CMAKE_SOURCE_DIR}/src/item_stack.h

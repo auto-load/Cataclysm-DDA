@@ -6,6 +6,7 @@
 #include "mondeath.h"
 #include "output.h"
 #include "game.h"
+#include "projectile.h"
 #include "debug.h"
 #include "rng.h"
 #include "item.h"
@@ -120,7 +121,6 @@ monster::monster()
     wandf = 0;
     hp = 60;
     moves = 0;
-    def_chance = 0;
     friendly = 0;
     anger = 0;
     morale = 2;
@@ -147,7 +147,6 @@ monster::monster( const mtype_id& id ) : monster()
         auto &entry = special_attacks[sa.first];
         entry.cooldown = rng( 0, sa.second.get_cooldown() );
     }
-    def_chance = type->def_chance;
     anger = type->agro;
     morale = type->morale;
     faction = type->default_faction;
@@ -198,7 +197,6 @@ void monster::poly( const mtype_id& id )
         auto &entry = special_attacks[sa.first];
         entry.cooldown = sa.second.get_cooldown();
     }
-    def_chance = type->def_chance;
     faction = type->default_faction;
     upgrades = type->upgrades;
 }
@@ -814,8 +812,8 @@ int monster::trigger_sum( const std::set<monster_trigger>& triggers ) const
             if( check_meat && g->m.sees_some_items( p, *this ) ) {
                 auto items = g->m.i_at( p );
                 for( auto &item : items ) {
-                    if( item.is_corpse() || item.type->id == "meat" ||
-                        item.type->id == "meat_cooked" || item.type->id == "human_flesh" ) {
+                    if( item.is_corpse() || item.typeId() == "meat" ||
+                        item.typeId() == "meat_cooked" || item.typeId() == "human_flesh" ) {
                         ret += 3;
                         check_meat = false;
                     }
@@ -1106,6 +1104,7 @@ void monster::deal_projectile_attack( Creature *source, dealt_projectile_attack 
     }
 
     Creature::deal_projectile_attack( source, attack );
+
     if( !is_hallucination() && attack.hit_critter == this ) {
         // Maybe TODO: Get difficulty from projectile speed/size/missed_by
         on_hit( source, bp_torso, INT_MIN, &attack );
@@ -1523,52 +1522,8 @@ void monster::normalize_ammo( const int old_ammo )
 
 void monster::explode()
 {
-    if( is_hallucination() ) {
-        //Can't gib hallucinations
-        return;
-    }
-    if( type->has_flag( MF_NOGIB ) ) {
-        return;
-    }
-    // Send body parts and blood all over!
-    const itype_id meat = type->get_meat_itype();
-    if( meat == "null" ) {
-        return; // Only create chunks if we know what kind to make.
-    }
-    const int num_chunks = type->get_meat_chunks_count();
-    const field_id type_blood = bloodType();
-    const field_id type_gib = gibType();
-
-    for( int i = 0; i < num_chunks; i++ ) {
-        tripoint tarp( pos() + tripoint( rng( -3, 3 ), rng( -3, 3 ), 0 ) );
-        const auto traj = line_to( pos(), tarp );
-
-        for( size_t j = 0; j < traj.size(); j++ ) {
-            tarp = traj[j];
-            if( one_in( 2 ) && type_blood != fd_null ) {
-                g->m.add_splatter( type_blood, tarp );
-            } else {
-                g->m.add_splatter( type_gib, tarp, rng( 1, j + 1 ) );
-            }
-            if( g->m.impassable( tarp ) ) {
-                g->m.bash( tarp, 3 );
-                if( g->m.impassable( tarp ) ) {
-                    // Target is obstacle, not destroyed by bashing,
-                    // stop trajectory in front of it, if this is the first
-                    // point (e.g. wall adjacent to monster) , make it invalid.
-                    if( j > 0 ) {
-                        tarp = traj[j - 1];
-                    } else {
-                        tarp = tripoint_min;
-                    }
-                    break;
-                }
-            }
-            if( tarp != tripoint_min ) {
-                g->m.spawn_item( tarp, meat, 1, 0, calendar::turn );
-            }
-        }
-    }
+    // Handled in mondeath::normal
+    hp = INT_MIN;
 }
 
 void monster::die(Creature* nkiller)
@@ -1580,9 +1535,6 @@ void monster::die(Creature* nkiller)
     }
     dead = true;
     set_killer( nkiller );
-    if( hp < -( type->size < MS_MEDIUM ? 1.5 : 3 ) * type->hp ) {
-        explode(); // Explode them if it was big overkill
-    }
     if (!no_extra_death_drops) {
         drop_items_on_death();
     }
@@ -2018,7 +1970,9 @@ void monster::on_hit( Creature *source, body_part,
         return;
     }
 
-    type->sp_defense( *this, source, proj );
+    if( rng( 0, 100 ) <= (long)type->def_chance ) {
+        type->sp_defense( *this, source, proj );
+    }
 
     // Adjust anger/morale of same-species monsters, if appropriate
     int anger_adjust = 0;

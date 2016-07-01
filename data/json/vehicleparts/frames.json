@@ -41,6 +41,17 @@
     "location": "structure",
     "durability": 400,
     "difficulty": 1,
+    "requirements": {
+      "install": {
+        "using": [ [ "welding_standard", 10 ] ],
+        "skills": [ [ "mechanics", 1 ] ],
+        "time": 120000
+      },
+      "removal": {
+        "using": "vehicle_weld_removal",
+        "skills": [ [ "mechanics", 1 ] ]
+      }
+    },
     "breaks_into": "ig_vp_frame",
     "flags": [ "MOUNTABLE" ]
   },
@@ -84,7 +95,18 @@
     "location": "structure",
     "color": "dark_gray",
     "durability": 1600,
-    "difficulty": 1,
+    "difficulty": 3,
+    "requirements": {
+      "install": {
+        "using": [ [ "welding_standard", 20 ] ],
+        "skills": [ [ "mechanics", 3 ] ],
+        "time": 240000
+      },
+      "removal": {
+        "using": "vehicle_weld_removal",
+        "skills": [ [ "mechanics", 1 ] ]
+      }
+    },
     "breaks_into": "ig_vp_hdframe",
     "flags": [ "MOUNTABLE" ]
   },

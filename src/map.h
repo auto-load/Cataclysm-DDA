@@ -457,7 +457,9 @@ public:
     void clear_vehicle_list( int zlev );
     void update_vehicle_list( submap * const to, const int zlev );
 
-    void destroy_vehicle (vehicle *veh);
+    // Removes vehicle from map and returns it in unique_ptr
+    std::unique_ptr<vehicle> detach_vehicle( vehicle *veh );
+    void destroy_vehicle( vehicle *veh );
     // Vehicle movement
     void vehmove();
     // Selects a vehicle to move, returns false if no moving vehicles
@@ -546,6 +548,11 @@ public:
 
     std::string name( const tripoint &p );
     std::string disp_name( const tripoint &p );
+    /**
+    * Returns the name of the obstacle at p that might be blocking movement/projectiles/etc.
+    * Note that this only accounts for vehicles, terrain, and furniture.
+    */
+    std::string obstacle_name( const tripoint &p );
     bool has_furn( const tripoint &p ) const;
 
     furn_id furn( const tripoint &p ) const;
@@ -979,7 +986,7 @@ void add_corpse( const tripoint &p );
          * Add field entry at point, or set density if present
          * @return false if the field could not be created (out of bounds), otherwise true.
          */
-        bool add_field( const tripoint &p, const field_id t, const int density, const int age);
+        bool add_field( const tripoint &p, const field_id t, const int density, const int age = 0 );
         /**
          * Remove field entry at xy, ignored if the field entry is not present.
          */
@@ -989,6 +996,9 @@ void add_corpse( const tripoint &p );
         void add_splatter( const field_id type, const tripoint &where, int density = 1 );
         void add_splatter_trail( const field_id type, const tripoint &from, const tripoint &to );
         void add_splash( const field_id type, const tripoint &center, int radius, int density );
+
+        void propagate_field( const tripoint &center, field_id fid,
+                              int amount, int max_density = MAX_FIELD_DENSITY );
 
 // End of 3D field function block
 

@@ -711,6 +711,7 @@ Some armor flags, such as `WATCH` and `ALARMCLOCK` are compatible with other ite
 - ```DISINFECTANT``` Prevents infections.
 - ```CAFF``` Reduces fatigue.
 - ```ATOMIC_CAFF``` Greatly reduces fatigue and increases radiation dosage.
+- ```ALCOHOL_STRONG``` Greatly increases drunkenness. Adds disease `drunk`.
 - ```ALCOHOL``` Increases drunkenness. Adds disease `drunk`.
 - ```ALCOHOL_WEAK``` Slightly increases drunkenness. Adds disease `drunk`
 - ```PKILL``` Reduces pain. Adds disease `pkill[n]` where `[n]` is the level of flag `PKILL_[n]` used on this comestible.
@@ -854,7 +855,7 @@ Melee flags are fully compatible with tool flags, and vice versa.
 - ```RADIOSIGNAL_1``` Activated per radios signal 1.
 - ```RADIOSIGNAL_2``` Activated per radios signal 2.
 - ```RADIOSIGNAL_3``` Activated per radios signal 3.
-- ```BOMB``` It's a radio controlled bomb.
+- ```BOMB``` It can be a remote controlled bomb.
 - ```RADIO_CONTAINER``` It's a container of something that is radio controlled.
 - ```RADIO_ACTIVATION``` It is activated by a remote control (also requires RADIOSIGNAL_*).
 - ```FISH_GOOD``` When used for fishing, it's a good tool (requires that the matching use_action has been set).
