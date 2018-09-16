@@ -1,15 +1,22 @@
+#pragma once
 #ifndef FAULT_H
 #define FAULT_H
 
 #include "string_id.h"
-#include "requirements.h"
-#include "json.h"
+
+#include <string>
+#include <map>
+
+class JsonObject;
 
 class fault;
 using fault_id = string_id<fault>;
 
 class Skill;
 using skill_id = string_id<Skill>;
+
+struct requirement_data;
+using requirement_id = string_id<requirement_data>;
 
 class fault
 {

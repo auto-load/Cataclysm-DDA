@@ -1,11 +1,14 @@
+#pragma once
 #ifndef TEXT_SNIPPET_H
 #define TEXT_SNIPPET_H
-
-#include "json.h"
 
 #include <map>
 #include <unordered_map>
 #include <string>
+#include <vector>
+
+class JsonObject;
+class JsonArray;
 
 class snippet_library
 {
@@ -29,6 +32,7 @@ class snippet_library
         bool has_category( const std::string &category ) const;
         int get_snippet_by_id( const std::string &id ) const;
         const std::string &random_from_category( const std::string &cat ) const;
+        const std::vector<int> all_ids_from_category( const std::string &cat ) const;
         /**
          * Load a single snippet text from the json object. The object should have
          * a "text" member with the text of the snippet.

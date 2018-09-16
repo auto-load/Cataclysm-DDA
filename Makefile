@@ -11,6 +11,13 @@
 #   or make CROSS=i586-mingw32msvc-
 #   or whichever prefix your crosscompiler uses
 #      as long as its name contains mingw32
+# Linux cross-compile to OSX with osxcross
+#   make CROSS=x86_64-apple-darwin15-
+#        NATIVE=osx
+#        CLANG=1
+#        OSXCROSS=1
+#        LIBSDIR=../libs
+#        FRAMEWORKSDIR=../Frameworks
 # Win32 (non-Cygwin)
 #   Run: make NATIVE=win32
 # OS X
@@ -54,12 +61,22 @@
 #  make DYNAMIC_LINKING=1
 # Use MSYS2 as the build environment on Windows
 #  make MSYS2=1
-# Astyle the currently whitelisted source files.
+# Astyle the source files that aren't blacklisted. (maintain current level of styling)
 #  make astyle
-# Check if the currently whitelisted source files are styled properly (regression test).
+# Check if source files are styled properly (regression test, astyle_blacklist tracks un-styled files)
 #  make astyle-check
 # Astyle all source files using the current rules (don't PR this, it's too many changes at once).
 #  make astyle-all
+# Style the whitelisted json files (maintain the current level of styling).
+#  make style-json
+# Style all json files using the current rules (don't PR this, it's too many changes at once).
+#  make style-all-json
+# Disable astyle of source files.
+# make ASTYLE=0
+# Disable format check of whitelisted json files.
+# make LINTJSON=0
+# Disable building and running tests.
+# make RUNTESTS=0
 
 # comment these to toggle them as one sees fit.
 # DEBUG is best turned on if you plan to debug in gdb -- please do!
@@ -71,10 +88,11 @@ RELEASE_FLAGS = -Werror
 WARNINGS = -Wall -Wextra
 # Uncomment below to disable warnings
 #WARNINGS = -w
+DEBUGSYMS = -g
 ifeq ($(shell sh -c 'uname -o 2>/dev/null || echo not'),Cygwin)
-  DEBUG = -g
+  DEBUG =
 else
-  DEBUG = -g -D_GLIBCXX_DEBUG
+  DEBUG = -D_GLIBCXX_DEBUG
 endif
 #PROFILE = -pg
 #OTHERS = -O3
@@ -94,6 +112,9 @@ endif
 #DEFINES += -DDEBUG_ENABLE_MAP
 #DEFINES += -DDEBUG_ENABLE_MAP_GEN
 #DEFINES += -DDEBUG_ENABLE_GAME
+
+# Explicitly let 'char' to be 'signed char' to fix #18776
+OTHERS += -fsigned-char
 
 VERSION = 0.C
 
@@ -120,6 +141,25 @@ LUA_BINARY = lua
 LOCALIZE = 1
 ASTYLE_BINARY = astyle
 
+# Enable astyle by default
+ifndef ASTYLE
+  ASTYLE = 1
+endif
+
+# Enable json format check by default
+ifndef LINTJSON
+  LINTJSON = 1
+endif
+
+# Enable running tests by default
+ifndef RUNTESTS
+  RUNTESTS = 1
+endif
+
+ifeq ($(RUNTESTS), 1)
+  TESTS = tests
+endif
+
 # tiles object directories are because gcc gets confused # Appears that the default value of $LD is unsuitable on most systems
 
 # when preprocessor defines change, but the source doesn't
@@ -129,7 +169,7 @@ W32ODIR = $(BUILD_PREFIX)objwin
 W32ODIRTILES = $(W32ODIR)/tiles
 
 ifdef AUTO_BUILD_PREFIX
-  BUILD_PREFIX = $(if $(RELEASE),release-)$(if $(TILES),tiles-)$(if $(SOUND),sound-)$(if $(LOCALIZE),local-)$(if $(BACKTRACE),back-)$(if $(MAPSIZE),map-$(MAPSIZE)-)$(if $(LUA),lua-)$(if $(USE_XDG_DIR),xdg-)$(if $(USE_HOME_DIR),home-)$(if $(DYNAMIC_LINKING),dynamic-)$(if $(MSYS2),msys2-)
+  BUILD_PREFIX = $(if $(RELEASE),release-)$(if $(DEBUG_SYMBOLS),symbol-)$(if $(TILES),tiles-)$(if $(SOUND),sound-)$(if $(LOCALIZE),local-)$(if $(BACKTRACE),back-)$(if $(MAPSIZE),map-$(MAPSIZE)-)$(if $(LUA),lua-)$(if $(USE_XDG_DIR),xdg-)$(if $(USE_HOME_DIR),home-)$(if $(DYNAMIC_LINKING),dynamic-)$(if $(MSYS2),msys2-)
   export BUILD_PREFIX
 endif
 
@@ -140,25 +180,51 @@ ifneq ($(findstring BSD,$(OS)),)
   BSD = 1
 endif
 
-# Expand at reference time to avoid recursive reference
-OS_COMPILER := $(CXX)
-# Appears that the default value of $LD is unsuitable on most systems
-OS_LINKER := $(CXX)
-ifdef CCACHE
-  CXX = ccache $(CROSS)$(OS_COMPILER)
-  LD  = ccache $(CROSS)$(OS_LINKER)
+# This sets CXX and so must be up here
+ifdef CLANG
+  # Allow setting specific CLANG version
+  ifeq ($(CLANG), 1)
+    CLANGCMD = clang++
+  else
+    CLANGCMD = $(CLANG)
+  endif
+  ifeq ($(NATIVE), osx)
+    USE_LIBCXX = 1
+  endif
+  ifdef USE_LIBCXX
+    OTHERS += -stdlib=libc++
+    LDFLAGS += -stdlib=libc++
+  endif
+  ifdef CCACHE
+    CXX = CCACHE_CPP2=1 ccache $(CROSS)$(CLANGCMD)
+    LD  = CCACHE_CPP2=1 ccache $(CROSS)$(CLANGCMD)
+  else
+    CXX = $(CROSS)$(CLANGCMD)
+    LD  = $(CROSS)$(CLANGCMD)
+  endif
 else
-  CXX = $(CROSS)$(OS_COMPILER)
-  LD  = $(CROSS)$(OS_LINKER)
+  # Compiler version & target machine - used later for MXE ICE workaround
+  ifdef CROSS
+    CXXVERSION := $(shell $(CROSS)$(CXX) --version | grep -i gcc | sed 's/^.* //g')
+    CXXMACHINE := $(shell $(CROSS)$(CXX) -dumpmachine)
+  endif
+
+  # Expand at reference time to avoid recursive reference
+  OS_COMPILER := $(CXX)
+  # Appears that the default value of $LD is unsuitable on most systems
+  OS_LINKER := $(CXX)
+  ifdef CCACHE
+    CXX = ccache $(CROSS)$(OS_COMPILER)
+    LD  = ccache $(CROSS)$(OS_LINKER)
+  else
+    CXX = $(CROSS)$(OS_COMPILER)
+    LD  = $(CROSS)$(OS_LINKER)
+  endif
 endif
+
 STRIP = $(CROSS)strip
 RC  = $(CROSS)windres
 AR  = $(CROSS)ar
-
-# Capture CXXVERSION if using MXE - used later for ICE workaround
-ifdef CROSS
-  CXXVERSION := $(shell ${OS_COMPILER} --version | grep -i gcc | sed 's/^.* //g')
-endif
 
 # We don't need scientific precision for our math functions, this lets them run much faster.
 CXXFLAGS += -ffast-math
@@ -174,7 +240,8 @@ ifdef RELEASE
     endif
   else
     # MXE ICE Workaround
-    ifeq (${CXXVERSION}, 4.9.3)
+    # known bad on 4.9.3 and 4.9.4, if it gets fixed this could include a version test too
+    ifeq ($(CXXMACHINE), x86_64-w64-mingw32.static)
       OPTLEVEL = -O3
     else
       OPTLEVEL = -Os
@@ -203,25 +270,16 @@ ifdef RELEASE
   # Strip symbols, generates smaller executable.
   OTHERS += $(RELEASE_FLAGS)
   DEBUG =
+  ifndef DEBUG_SYMBOLS
+    DEBUGSYMS =
+  endif
   DEFINES += -DRELEASE
-  # Do an astyle regression check on release builds.
-  ASTYLE = astyle-check json-format-check
-endif
-
-ifdef CLANG
-  ifeq ($(NATIVE), osx)
-    USE_LIBCXX = 1
+  # Check for astyle or JSON regressions on release builds.
+  ifeq ($(ASTYLE), 1)
+    CHECKS += astyle-check
   endif
-  ifdef USE_LIBCXX
-    OTHERS += -stdlib=libc++
-    LDFLAGS += -stdlib=libc++
-  endif
-  ifdef CCACHE
-    CXX = CCACHE_CPP2=1 ccache $(CROSS)clang++
-    LD  = CCACHE_CPP2=1 ccache $(CROSS)clang++
-  else
-    CXX = $(CROSS)clang++
-    LD  = $(CROSS)clang++
+  ifeq ($(LINTJSON), 1)
+    CHECKS += style-json
   endif
 endif
 
@@ -240,7 +298,7 @@ ifeq ($(shell sh -c 'uname -o 2>/dev/null || echo not'),Cygwin)
     OTHERS += -std=c++11
 endif
 
-CXXFLAGS += $(WARNINGS) $(DEBUG) $(PROFILE) $(OTHERS) -MMD
+CXXFLAGS += $(WARNINGS) $(DEBUG) $(DEBUGSYMS) $(PROFILE) $(OTHERS) -MMD -MP
 
 BINDIST_EXTRAS += README.md data doc
 BINDIST    = $(BUILD_PREFIX)cataclysmdda-$(VERSION).tar.gz
@@ -266,12 +324,20 @@ ifeq ($(NATIVE), linux64)
   CXXFLAGS += -m64
   LDFLAGS += -m64
   TARGETSYSTEM=LINUX
+  ifdef GOLD
+    CXXFLAGS += -fuse-ld=gold
+    LDFLAGS += -fuse-ld=gold
+  endif
 else
   # Linux 32-bit
   ifeq ($(NATIVE), linux32)
     CXXFLAGS += -m32
     LDFLAGS += -m32
     TARGETSYSTEM=LINUX
+    ifdef GOLD
+      CXXFLAGS += -fuse-ld=gold
+      LDFLAGS += -fuse-ld=gold
+    endif
   endif
 endif
 
@@ -284,11 +350,13 @@ ifeq ($(NATIVE), osx)
   endif
   DEFINES += -DMACOSX
   CXXFLAGS += -mmacosx-version-min=$(OSX_MIN)
-  LDFLAGS += -mmacosx-version-min=$(OSX_MIN)
+  LDFLAGS += -mmacosx-version-min=$(OSX_MIN) -framework CoreFoundation
   ifdef FRAMEWORK
-    FRAMEWORKSDIR := $(strip $(if $(shell [ -d $(HOME)/Library/Frameworks ] && echo 1), \
+    ifeq ($(FRAMEWORKSDIR),)
+      FRAMEWORKSDIR := $(strip $(if $(shell [ -d $(HOME)/Library/Frameworks ] && echo 1), \
                              $(if $(shell find $(HOME)/Library/Frameworks -name 'SDL2.*'), \
                                $(HOME)/Library/Frameworks,),))
+    endif
     ifeq ($(FRAMEWORKSDIR),)
       FRAMEWORKSDIR := $(strip $(if $(shell find /Library/Frameworks -name 'SDL2.*'), \
                                  /Library/Frameworks,))
@@ -299,6 +367,10 @@ ifeq ($(NATIVE), osx)
   endif
   ifeq ($(LOCALIZE), 1)
     LDFLAGS += -lintl
+    ifdef OSXCROSS
+      LDFLAGS += -L$(LIBSDIR)/gettext/lib
+      CXXFLAGS += -I$(LIBSDIR)/gettext/include
+    endif
     ifeq ($(MACPORTS), 1)
       ifneq ($(TILES), 1)
         CXXFLAGS += -I$(shell ncursesw6-config --includedir)
@@ -317,12 +389,17 @@ ifeq ($(NATIVE), win32)
 # Any reason not to use -m32 on MinGW32?
   TARGETSYSTEM=WINDOWS
 else
-  # Win64 (MinGW-w64? 64bit isn't currently working.)
+  # Win64 (MinGW-w64?)
   ifeq ($(NATIVE), win64)
     CXXFLAGS += -m64
     LDFLAGS += -m64
     TARGETSYSTEM=WINDOWS
   endif
+endif
+
+# MSYS2
+ifeq ($(MSYS2), 1)
+  TARGETSYSTEM=WINDOWS
 endif
 
 # Cygwin
@@ -338,13 +415,12 @@ endif
 
 # Global settings for Windows targets
 ifeq ($(TARGETSYSTEM),WINDOWS)
-  BACKTRACE = 0
   CHKJSON_BIN = chkjson.exe
   TARGET = $(W32TARGET)
   BINDIST = $(W32BINDIST)
   BINDIST_CMD = $(W32BINDIST_CMD)
   ODIR = $(W32ODIR)
-  ifdef DYNAMIC_LINKING
+  ifeq ($(DYNAMIC_LINKING), 1)
     # Windows isn't sold with programming support, these are static to remove MinGW dependency.
     LDFLAGS += -static-libgcc -static-libstdc++
   else
@@ -372,8 +448,8 @@ endif
 PKG_CONFIG = $(CROSS)pkg-config
 SDL2_CONFIG = $(CROSS)sdl2-config
 
-ifdef SOUND
-  ifndef TILES
+ifeq ($(SOUND), 1)
+  ifneq ($(TILES),1)
     $(error "SOUND=1 only works with TILES=1")
   endif
   ifeq ($(NATIVE),osx)
@@ -396,8 +472,8 @@ ifdef SOUND
     LDFLAGS += -lpthread
   endif
 
-  ifdef MSYS2
-    LDFLAGS += -lmad
+  ifeq ($(MSYS2),1)
+    LDFLAGS += -lmpg123 -lshlwapi -lvorbisfile -lvorbis -logg -lflac
   endif
 
   CXXFLAGS += -DSDL_SOUND
@@ -405,7 +481,7 @@ endif
 
 ifdef LUA
   ifeq ($(TARGETSYSTEM),WINDOWS)
-    ifdef MSYS2
+    ifeq ($(MSYS2),1)
       LUA_USE_PKGCONFIG := 1
     else
       # Windows expects to have lua unpacked at a specific location
@@ -415,14 +491,19 @@ ifdef LUA
     LUA_USE_PKGCONFIG := 1
   endif
 
-  ifdef LUA_USE_PKGCONFIG
-    # On unix-like systems, use pkg-config to find lua
-    LUA_CANDIDATES = lua5.2 lua-5.2 lua5.1 lua-5.1 lua
-    LUA_FOUND = $(firstword $(foreach lua,$(LUA_CANDIDATES),\
-        $(shell if $(PKG_CONFIG) --silence-errors --exists $(lua); then echo $(lua);fi)))
-    LUA_PKG = $(if $(LUA_FOUND),$(LUA_FOUND),$(error "Lua not found by $(PKG_CONFIG), install it or make without 'LUA=1'"))
-    LUA_LIBS := $(shell $(PKG_CONFIG) --silence-errors --libs $(LUA_PKG))
-    LUA_CFLAGS := $(shell $(PKG_CONFIG) --silence-errors --cflags $(LUA_PKG))
+  ifdef OSXCROSS
+    LUA_LIBS = -L$(LIBSDIR)/lua/lib -llua -lm
+    LUA_CFLAGS = -I$(LIBSDIR)/lua/include
+  else
+    ifdef LUA_USE_PKGCONFIG
+      # On unix-like systems, use pkg-config to find lua
+      LUA_CANDIDATES = lua5.3 lua5.2 lua-5.3 lua-5.2 lua5.1 lua-5.1 lua $(LUA_BINARY)
+      LUA_FOUND = $(firstword $(foreach lua,$(LUA_CANDIDATES),\
+          $(shell if $(PKG_CONFIG) --silence-errors --exists $(lua); then echo $(lua);fi)))
+      LUA_PKG = $(if $(LUA_FOUND),$(LUA_FOUND),$(error "Lua not found by $(PKG_CONFIG), install it or make without 'LUA=1'"))
+      LUA_LIBS := $(shell $(PKG_CONFIG) --silence-errors --libs $(LUA_PKG))
+      LUA_CFLAGS := $(shell $(PKG_CONFIG) --silence-errors --cflags $(LUA_PKG))
+    endif
   endif
 
   LDFLAGS += $(LUA_LIBS)
@@ -446,8 +527,14 @@ ifdef TILES
 		-I$(FRAMEWORKSDIR)/SDL2.framework/Headers \
 		-I$(FRAMEWORKSDIR)/SDL2_image.framework/Headers \
 		-I$(FRAMEWORKSDIR)/SDL2_ttf.framework/Headers
+			ifdef SOUND
+				OSX_INC += -I$(FRAMEWORKSDIR)/SDL2_mixer.framework/Headers
+			endif
       LDFLAGS += -F$(FRAMEWORKSDIR) \
 		 -framework SDL2 -framework SDL2_image -framework SDL2_ttf -framework Cocoa
+		 ifdef SOUND
+		 	LDFLAGS += -framework SDL2_mixer
+		 endif
       CXXFLAGS += $(OSX_INC)
     else # libsdl build
       DEFINES += -DOSX_SDL2_LIBS
@@ -456,6 +543,9 @@ ifdef TILES
 		  -I$(shell dirname $(shell sdl2-config --cflags | sed 's/-I\(.[^ ]*\) .*/\1/'))
       LDFLAGS += -framework Cocoa $(shell sdl2-config --libs) -lSDL2_ttf
       LDFLAGS += -lSDL2_image
+      ifdef SOUND
+        LDFLAGS += -lSDL2_mixer
+      endif
     endif
   else # not osx
     CXXFLAGS += $(shell $(SDL2_CONFIG) --cflags)
@@ -485,8 +575,8 @@ ifdef TILES
         LDFLAGS += $(shell $(PKG_CONFIG) SDL2_image --libs)
         LDFLAGS += $(shell $(PKG_CONFIG) SDL2_ttf --libs)
       else
-        ifdef MSYS2
-          LDFLAGS += -lfreetype -lpng -lz -ltiff -lbz2 -lharfbuzz -lglib-2.0 -llzma -lws2_32 -lintl -liconv -lwebp -ljpeg -luuid
+        ifeq ($(MSYS2),1)
+          LDFLAGS += -Wl,--start-group -lharfbuzz -lfreetype -Wl,--end-group -lgraphite2 -lpng -lz -ltiff -lbz2 -lglib-2.0 -llzma -lws2_32 -lintl -liconv -lwebp -ljpeg -luuid
         else
           LDFLAGS += -lfreetype -lpng -lz -ljpeg -lbz2
         endif
@@ -503,25 +593,49 @@ ifdef TILES
     ODIR = $(ODIRTILES)
   endif
 else
+  # ONLY when not cross-compiling, check for pkg-config or ncurses5-config
+  # When doing a cross-compile, we can't rely on the host machine's -configs
   ifeq ($(CROSS),)
-    ifneq ($(shell which ncursesw5-config 2>/dev/null),)
-      HAVE_NCURSESW5CONFIG = 1
+    ifneq ($(shell pkg-config --libs ncurses 2>/dev/null),)
+      HAVE_PKGCONFIG = 1
+    endif
+    ifneq ($(shell which ncurses5-config 2>/dev/null),)
+      HAVE_NCURSES5CONFIG = 1
     endif
   endif
 
   # Link to ncurses if we're using a non-tiles, Linux build
-  ifeq ($(HAVE_NCURSESW5CONFIG),1)
-    CXXFLAGS += $(shell ncursesw5-config --cflags)
-    LDFLAGS += $(shell ncursesw5-config --libs)
-  else
-    ifneq ($(TARGETSYSTEM),WINDOWS)
-      LDFLAGS += -lncurses
+  ifeq ($(HAVE_PKGCONFIG),1)
+    ifeq ($(LOCALIZE),1)
+      CXXFLAGS += $(shell pkg-config --cflags ncursesw)
+      LDFLAGS += $(shell pkg-config --libs ncursesw)
+    else
+      CXXFLAGS += $(shell pkg-config --cflags ncurses)
+      LDFLAGS += $(shell pkg-config --libs ncurses)
     endif
-  endif
-endif
+  else
+    ifeq ($(HAVE_NCURSES5CONFIG),1)
+      ifeq ($(LOCALIZE),1)
+        CXXFLAGS += $(shell ncursesw5-config --cflags)
+        LDFLAGS += $(shell ncursesw5-config --libs)
+      else
+        CXXFLAGS += $(shell ncurses5-config --cflags)
+        LDFLAGS += $(shell ncurses5-config --libs)
+      endif
+    else
+      ifneq ($(TARGETSYSTEM),WINDOWS)
+        LDFLAGS += -lncurses
+      endif
+
+      ifdef OSXCROSS
+        LDFLAGS += -L$(LIBSDIR)/ncurses/lib
+        CXXFLAGS += -I$(LIBSDIR)/ncurses/include
+      endif # OSXCROSS
+    endif # HAVE_NCURSES5CONFIG
+  endif # HAVE_PKGCONFIG
+endif # TILES
 
 ifeq ($(TARGETSYSTEM),CYGWIN)
-  BACKTRACE = 0
   ifeq ($(LOCALIZE),1)
     # Work around Cygwin not including gettext support in glibc
     LDFLAGS += -lintl -liconv
@@ -545,6 +659,9 @@ endif
 # Global settings for Windows targets (at end)
 ifeq ($(TARGETSYSTEM),WINDOWS)
     LDFLAGS += -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lversion
+    ifeq ($(BACKTRACE),1)
+      LDFLAGS += -ldbghelp
+    endif
 endif
 
 ifeq ($(BACKTRACE),1)
@@ -561,16 +678,27 @@ endif
 
 ifeq ($(TARGETSYSTEM),CYGWIN)
   BINDIST_EXTRAS += cataclysm-launcher
+  DEFINES += -D_GLIBCXX_USE_C99_MATH_TR1
 endif
 
+ifeq ($(MSYS2),1)
+  DEFINES += -D_GLIBCXX_USE_C99_MATH_TR1
+  CXXFLAGS += -DMSYS2
+endif
+
+# Enumerations of all the source files and headers.
 SOURCES = $(wildcard $(SRC_DIR)/*.cpp)
 HEADERS = $(wildcard $(SRC_DIR)/*.h)
+TESTSRC = $(wildcard tests/*.cpp)
+TESTHDR = $(wildcard tests/*.h)
+TOOLSRC = $(wildcard tools/json_tools/format/*.[ch]*)
+
 _OBJS = $(SOURCES:$(SRC_DIR)/%.cpp=%.o)
 ifeq ($(TARGETSYSTEM),WINDOWS)
   RSRC = $(wildcard $(SRC_DIR)/*.rc)
   _OBJS += $(RSRC:$(SRC_DIR)/%.rc=%.o)
 endif
-OBJS = $(patsubst %,$(ODIR)/%,$(_OBJS))
+OBJS = $(sort $(patsubst %,$(ODIR)/%,$(_OBJS)))
 
 ifdef LANGUAGES
   L10N = localization
@@ -607,18 +735,39 @@ ifdef LTO
   # optimization flags to be specified on the link line, and requires them to
   # match the original invocations.
   LDFLAGS += $(CXXFLAGS)
+
+  # If GCC or CLANG, use a wrapper for AR (if it exists) else test fails to build
+  ifndef CLANG
+    GCCAR := $(shell command -v gcc-ar 2> /dev/null)
+    ifdef GCCAR
+      ifneq (,$(findstring gcc version,$(shell $(CXX) -v </dev/null 2>&1)))
+        AR = gcc-ar
+      endif
+    endif
+  else
+    LLVMAR := $(shell command -v llvm-ar 2> /dev/null)
+    ifdef LLVMAR
+      ifneq (,$(findstring clang version,$(shell $(CXX) -v </dev/null 2>&1)))
+        AR = llvm-ar
+      endif
+    endif
+  endif
 endif
 
-all: version $(ASTYLE) $(TARGET) $(L10N) tests
+all: version $(CHECKS) $(TARGET) $(L10N) $(TESTS) validate-pr
 	@
 
-$(TARGET): $(ODIR) $(OBJS)
+$(TARGET): $(OBJS)
 	+$(LD) $(W32FLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 ifdef RELEASE
+  ifndef DEBUG_SYMBOLS
+    ifneq ($(BACKTRACE),1)
 	$(STRIP) $(TARGET)
+    endif
+  endif
 endif
 
-$(BUILD_PREFIX)$(TARGET_NAME).a: $(ODIR) $(OBJS)
+$(BUILD_PREFIX)$(TARGET_NAME).a: $(OBJS)
 	$(AR) rcs $(BUILD_PREFIX)$(TARGET_NAME).a $(filter-out $(ODIR)/main.o $(ODIR)/messages.o,$(OBJS))
 
 .PHONY: version json-verify
@@ -631,8 +780,8 @@ version:
 json-verify:
 	$(LUA_BINARY) lua/json_verifier.lua
 
-$(ODIR):
-	mkdir -p $(ODIR)
+# Unconditionally create the object dir on every invocation.
+$(shell mkdir -p $(ODIR))
 
 $(ODIR)/%.o: $(SRC_DIR)/%.cpp
 	$(CXX) $(CPPFLAGS) $(DEFINES) $(CXXFLAGS) -c $< -o $@
@@ -685,12 +834,12 @@ install: version $(TARGET)
 	mkdir -p $(DATA_PREFIX)
 	mkdir -p $(BIN_PREFIX)
 	install --mode=755 $(TARGET) $(BIN_PREFIX)
+	cp -R --no-preserve=ownership data/core $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/font $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/json $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/mods $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/names $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/raw $(DATA_PREFIX)
-	cp -R --no-preserve=ownership data/recycling $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/motd $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/credits $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/title $(DATA_PREFIX)
@@ -703,12 +852,15 @@ endif
 ifdef LUA
 	mkdir -p $(DATA_PREFIX)/lua
 	install --mode=644 lua/autoexec.lua $(DATA_PREFIX)/lua
+	install --mode=644 lua/log.lua $(DATA_PREFIX)/lua
 	install --mode=644 lua/class_definitions.lua $(DATA_PREFIX)/lua
 endif
 	install --mode=644 data/changelog.txt data/cataicon.ico data/fontdata.json \
                    LICENSE.txt -t $(DATA_PREFIX)
 	mkdir -p $(LOCALE_DIR)
-	LOCALE_DIR=$(LOCALE_DIR) lang/compile_mo.sh
+ifdef LANGUAGES
+	LOCALE_DIR=$(LOCALE_DIR) lang/compile_mo.sh $(LANGUAGES)
+endif
 endif
 
 ifeq ($(TARGETSYSTEM), CYGWIN)
@@ -719,12 +871,12 @@ install: version $(TARGET)
 	mkdir -p $(DATA_PREFIX)
 	mkdir -p $(BIN_PREFIX)
 	install --mode=755 $(TARGET) $(BIN_PREFIX)
+	cp -R --no-preserve=ownership data/core $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/font $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/json $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/mods $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/names $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/raw $(DATA_PREFIX)
-	cp -R --no-preserve=ownership data/recycling $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/motd $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/credits $(DATA_PREFIX)
 	cp -R --no-preserve=ownership data/title $(DATA_PREFIX)
@@ -737,12 +889,15 @@ endif
 ifdef LUA
 	mkdir -p $(DATA_PREFIX)/lua
 	install --mode=644 lua/autoexec.lua $(DATA_PREFIX)/lua
+	install --mode=644 lua/log.lua $(DATA_PREFIX)/lua
 	install --mode=644 lua/class_definitions.lua $(DATA_PREFIX)/lua
 endif
 	install --mode=644 data/changelog.txt data/cataicon.ico data/fontdata.json \
                    LICENSE.txt -t $(DATA_PREFIX)
 	mkdir -p $(LOCALE_DIR)
-	LOCALE_DIR=$(LOCALE_DIR) lang/compile_mo.sh
+ifdef LANGUAGES
+	LOCALE_DIR=$(LOCALE_DIR) lang/compile_mo.sh $(LANGUAGES)
+endif
 endif
 
 
@@ -764,7 +919,11 @@ appclean:
 data/osx/AppIcon.icns: data/osx/AppIcon.iconset
 	iconutil -c icns $<
 
+ifdef OSXCROSS
+app: appclean version $(APPTARGET)
+else
 app: appclean version data/osx/AppIcon.icns $(APPTARGET)
+endif
 	mkdir -p $(APPTARGETDIR)/Contents
 	cp data/osx/Info.plist $(APPTARGETDIR)/Contents/
 	mkdir -p $(APPTARGETDIR)/Contents/MacOS
@@ -774,26 +933,28 @@ app: appclean version data/osx/AppIcon.icns $(APPTARGET)
 	cp data/osx/AppIcon.icns $(APPRESOURCESDIR)/
 	mkdir -p $(APPDATADIR)
 	cp data/fontdata.json $(APPDATADIR)
+	cp -R data/core $(APPDATADIR)
 	cp -R data/font $(APPDATADIR)
 	cp -R data/json $(APPDATADIR)
 	cp -R data/mods $(APPDATADIR)
 	cp -R data/names $(APPDATADIR)
 	cp -R data/raw $(APPDATADIR)
-	cp -R data/recycling $(APPDATADIR)
 	cp -R data/motd $(APPDATADIR)
 	cp -R data/credits $(APPDATADIR)
 	cp -R data/title $(APPDATADIR)
-	# bundle libc++ to fix bad buggy version on osx 10.7
-	LIBCPP=$$(otool -L $(APPTARGET) | grep libc++ | sed -n 's/\(.*\.dylib\).*/\1/p') && cp $$LIBCPP $(APPRESOURCESDIR)/ && cp $$(otool -L $$LIBCPP | grep libc++abi | sed -n 's/\(.*\.dylib\).*/\1/p') $(APPRESOURCESDIR)/
 ifdef LANGUAGES
-	ditto lang/mo $(APPRESOURCESDIR)/lang/mo
+	lang/compile_mo.sh $(LANGUAGES)
+	mkdir -p $(APPRESOURCESDIR)/lang/mo/
+	cp -pR lang/mo/* $(APPRESOURCESDIR)/lang/mo/
 endif
 ifeq ($(LOCALIZE), 1)
-	LIBINTL=$$(otool -L $(APPTARGET) | grep libintl | sed -n 's/\(.*\.dylib\).*/\1/p') && cp $$LIBINTL $(APPRESOURCESDIR)/
+	LIBINTL=$$($(CROSS)otool -L $(APPTARGET) | grep libintl | sed -n 's/\(.*\.dylib\).*/\1/p') && if [ -f $$LIBINTL ]; then cp $$LIBINTL $(APPRESOURCESDIR)/; fi; \
+		if [ ! -z "$$OSXCROSS" ]; then LIBINTL=$$(basename $$LIBINTL) && if [ ! -z "$$LIBINTL" ]; then cp $(LIBSDIR)/gettext/lib/$$LIBINTL $(APPRESOURCESDIR)/; fi; fi
 endif
 ifdef LUA
 	cp -R lua $(APPRESOURCESDIR)/
-	LIBLUA=$$(otool -L $(APPTARGET) | grep liblua | sed -n 's/\(.*\.dylib\).*/\1/p') && if [ ! -z "$$LIBLUA" ]; then cp $$LIBLUA $(APPRESOURCESDIR)/; fi
+	LIBLUA=$$($(CROSS)otool -L $(APPTARGET) | grep liblua | sed -n 's/\(.*\.dylib\).*/\1/p') && if [ -f $$LIBLUA ]; then cp $$LIBLUA $(APPRESOURCESDIR)/; fi; \
+		if [ ! -z "$$OSXCROSS" ]; then LIBLUA=$$(basename $$LIBLUA) && if [ ! -z "$$LIBLUA" ]; then cp $(LIBSDIR)/lua/lib/$$LIBLUA $(APPRESOURCESDIR)/; fi; fi
 endif # ifdef LUA
 ifdef TILES
 ifdef SOUND
@@ -808,22 +969,37 @@ ifdef SOUND
 	cp -R $(FRAMEWORKSDIR)/SDL2_mixer.framework $(APPRESOURCESDIR)/
 	cd $(APPRESOURCESDIR)/ && ln -s SDL2_mixer.framework/Frameworks/Vorbis.framework Vorbis.framework
 	cd $(APPRESOURCESDIR)/ && ln -s SDL2_mixer.framework/Frameworks/Ogg.framework Ogg.framework
-	cd $(APPRESOURCESDIR)/SDL2_mixer.framework/Frameworks && find . -type d -maxdepth 1 -not -name '*Vorbis.framework' -not -name '*Ogg.framework' -not -name '.' | xargs rm -rf
+	cd $(APPRESOURCESDIR)/SDL2_mixer.framework/Frameworks && find . -maxdepth 1 -type d -not -name '*Vorbis.framework' -not -name '*Ogg.framework' -not -name '.' | xargs rm -rf
 endif  # ifdef SOUND
 else # libsdl build
 	cp $(SDLLIBSDIR)/libSDL2.dylib $(APPRESOURCESDIR)/
 	cp $(SDLLIBSDIR)/libSDL2_image.dylib $(APPRESOURCESDIR)/
 	cp $(SDLLIBSDIR)/libSDL2_ttf.dylib $(APPRESOURCESDIR)/
+ifdef SOUND
+	cp $(SDLLIBSDIR)/libSDL2_mixer.dylib $(APPRESOURCESDIR)/
+endif  # ifdef SOUND
 endif  # ifdef FRAMEWORK
 
 endif  # ifdef TILES
 
 dmgdistclean:
+	rm -rf Cataclysm
 	rm -f Cataclysm.dmg
 	rm -rf lang/mo
 
 dmgdist: dmgdistclean $(L10N) app
+ifdef OSXCROSS
+	mkdir Cataclysm
+	cp -a $(APPTARGETDIR) Cataclysm/$(APPTARGETDIR)
+	cp data/osx/DS_Store Cataclysm/.DS_Store
+	cp data/osx/dmgback.png Cataclysm/.background.png
+	ln -s /Applications Cataclysm/Applications
+	genisoimage -quiet -D -V "Cataclysm DDA" -no-pad -r -apple -o Cataclysm-uncompressed.dmg Cataclysm/
+	dmg dmg Cataclysm-uncompressed.dmg Cataclysm.dmg
+	rm Cataclysm-uncompressed.dmg
+else
 	dmgbuild -s data/osx/dmgsettings.py "Cataclysm DDA" Cataclysm.dmg
+endif
 
 endif  # ifeq ($(NATIVE), osx)
 
@@ -837,34 +1013,53 @@ endif
 
 export ODIR _OBJS LDFLAGS CXX W32FLAGS DEFINES CXXFLAGS
 
-ctags: $(SOURCES) $(HEADERS)
-	ctags $(SOURCES) $(HEADERS)
+ctags: $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR)
+	ctags $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR)
 
-etags: $(SOURCES) $(HEADERS)
-	etags $(SOURCES) $(HEADERS)
+etags: $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR)
+	etags $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR)
 	find data -name "*.json" -print0 | xargs -0 -L 50 etags --append
 
-astyle:
-	$(ASTYLE_BINARY) --options=.astylerc -n $(shell cat astyled_whitelist)
+# Generate a list of files to check based on the difference between the blacklist and the existing source files.
+ASTYLED_WHITELIST = $(filter-out $(shell cat astyle_blacklist), $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR) $(TOOLSRC) )
 
-astyle-all: $(SOURCES) $(HEADERS)
+astyle: $(ASTYLED_WHITELIST)
+	$(ASTYLE_BINARY) --options=.astylerc -n $(ASTYLED_WHITELIST)
+
+astyle-all: $(SOURCES) $(HEADERS) $(TESTSRC) $(TESTHDR) $(TOOLSRC)
 	$(ASTYLE_BINARY) --options=.astylerc -n $(SOURCES) $(HEADERS)
-
-json-format-check:
-	tools/json_format_check.sh
+	$(ASTYLE_BINARY) --options=.astylerc -n $(TESTSRC) $(TESTHDR)
 
 # Test whether the system has a version of astyle that supports --dry-run
 ifeq ($(shell if $(ASTYLE_BINARY) -Q -X --dry-run src/game.h > /dev/null; then echo foo; fi),foo)
-ASTYLE_CHECK=$(shell LC_ALL=C $(ASTYLE_BINARY) --options=.astylerc --dry-run -X -Q $(shell cat astyled_whitelist))
+ASTYLE_CHECK=$(shell LC_ALL=C $(ASTYLE_BINARY) --options=.astylerc --dry-run -X -Q $(ASTYLED_WHITELIST))
 endif
 
-astyle-check: $(SOURCES) $(HEADERS)
+astyle-check:
 ifdef ASTYLE_CHECK
 	@if [ "$(findstring Formatted,$(ASTYLE_CHECK))" = "" ]; then echo "no astyle regressions";\
         else printf "astyle regressions found.\n$(ASTYLE_CHECK)\n" && false; fi
 else
 	@echo Cannot run an astyle check, your system either does not have astyle, or it is too old.
 endif
+
+JSON_FILES = $(shell find data -name *.json | sed "s|^\./||")
+JSON_WHITELIST = $(filter-out $(shell cat json_blacklist), $(JSON_FILES))
+
+style-json: $(JSON_WHITELIST)
+
+$(JSON_WHITELIST): json_blacklist json_formatter
+ifndef CROSS
+	@tools/format/json_formatter.cgi $@
+else
+	@echo Cannot run json formatter in cross compiles.
+endif
+
+style-all-json: json_formatter
+	find data -name "*.json" -print0 | xargs -0 -L 1 tools/format/json_formatter.cgi
+
+json_formatter: tools/format/format.cpp src/json.cpp
+	$(CXX) $(CXXFLAGS) -Itools/format -Isrc tools/format/format.cpp src/json.cpp -o tools/format/json_formatter.cgi
 
 tests: version $(BUILD_PREFIX)cataclysm.a
 	$(MAKE) -C tests
@@ -875,7 +1070,10 @@ check: version $(BUILD_PREFIX)cataclysm.a
 clean-tests:
 	$(MAKE) -C tests clean
 
-.PHONY: tests check ctags etags clean-tests install
+validate-pr:
+	@build-scripts/validate_pr_in_jenkins
+
+.PHONY: tests check ctags etags clean-tests install lint validate-pr
 
 -include $(SOURCES:$(SRC_DIR)/%.cpp=$(DEPDIR)/%.P)
 -include ${OBJS:.o=.d}

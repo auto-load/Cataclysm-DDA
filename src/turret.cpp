@@ -3,9 +3,14 @@
 #include "game.h"
 #include "player.h"
 #include "item.h"
+#include "output.h"
 #include "itype.h"
+#include "string_formatter.h"
 #include "veh_type.h"
+#include "gun_mode.h"
+#include "vehicle_selector.h"
 #include "npc.h"
+#include "ranged.h"
 #include "projectile.h"
 #include "messages.h"
 #include "translations.h"
@@ -22,7 +27,7 @@ std::vector<vehicle_part *> vehicle::turrets()
     std::vector<vehicle_part *> res;
 
     for( auto &e : parts ) {
-        if( e.hp > 0 && e.base.is_gun() ) {
+        if( !e.is_broken() && e.base.is_gun() ) {
             res.push_back( &e );
         }
     }
@@ -32,76 +37,249 @@ std::vector<vehicle_part *> vehicle::turrets()
 std::vector<vehicle_part *> vehicle::turrets( const tripoint &target )
 {
     std::vector<vehicle_part *> res = turrets();
-
     // exclude turrets not ready to fire or where target is out of range
     res.erase( std::remove_if( res.begin(), res.end(), [&]( const vehicle_part * e ) {
-        return turret_query( *e ) != turret_status::ready ||
+        return turret_query( *e ).query() != turret_data::status::ready ||
                rl_dist( global_part_pos3( *e ), target ) > e->base.gun_range();
     } ), res.end() );
-
     return res;
 }
 
-vehicle::turret_status vehicle::turret_query( const vehicle_part &pt ) const
+turret_data vehicle::turret_query( vehicle_part &pt )
 {
-    if( !pt.base.ammo_sufficient() ) {
-        return turret_status::no_ammo;
+    if( !pt.is_turret() || pt.removed || pt.is_broken() ) {
+        return turret_data();
     }
-
-    auto ups = pt.base.get_gun_ups_drain() * pt.base.gun_current_mode().qty;
-    if( ups > fuel_left( fuel_type_battery ) ) {
-        return turret_status::no_power;
-    }
-
-    return turret_status::ready;
+    return turret_data( this, &pt );
 }
 
-int vehicle::turret_fire( vehicle_part &pt )
+const turret_data vehicle::turret_query( const vehicle_part &pt ) const
 {
-    int shots = 0;
+    return const_cast<vehicle *>( this )->turret_query( const_cast<vehicle_part &>( pt ) );
+}
 
-    item &gun = pt.base;
-    if( !gun.is_gun() ) {
+turret_data vehicle::turret_query( const tripoint &pos )
+{
+    auto res = get_parts( pos, "TURRET" );
+    return !res.empty() ? turret_query( *res.front() ) : turret_data();
+}
+
+const turret_data vehicle::turret_query( const tripoint &pos ) const
+{
+    return const_cast<vehicle *>( this )->turret_query( pos );
+}
+
+std::string turret_data::name() const
+{
+    return part->name();
+}
+
+item_location turret_data::base()
+{
+    return item_location( vehicle_cursor( *veh, veh->index_of_part( part ) ), &part->base );
+}
+
+const item_location turret_data::base() const
+{
+    return item_location( vehicle_cursor( *veh, veh->index_of_part( part ) ), &part->base );
+}
+
+long turret_data::ammo_remaining() const
+{
+    if( !veh || !part ) {
+        return 0;
+    }
+    if( part->info().has_flag( "USE_TANKS" ) ) {
+        return veh->fuel_left( ammo_current() );
+    }
+    return part->base.ammo_remaining();
+}
+
+long turret_data::ammo_capacity() const
+{
+    if( !veh || !part || part->info().has_flag( "USE_TANKS" ) ) {
+        return 0;
+    }
+    return part->base.ammo_capacity();
+}
+
+const itype *turret_data::ammo_data() const
+{
+    if( !veh || !part ) {
+        return nullptr;
+    }
+    if( part->info().has_flag( "USE_TANKS" ) ) {
+        return ammo_current() != "null" ? item::find_type( ammo_current() ) : nullptr;
+    }
+    return part->base.ammo_data();
+}
+
+itype_id turret_data::ammo_current() const
+{
+    auto opts = ammo_options();
+    if( opts.count( part->ammo_pref ) ) {
+        return part->ammo_pref;
+    }
+    if( opts.count( part->info().default_ammo ) ) {
+        return part->info().default_ammo;
+    }
+    if( opts.count( part->base.ammo_default() ) ) {
+        return part->base.ammo_default();
+    }
+    return opts.empty() ? "null" : *opts.begin();
+}
+
+std::set<itype_id> turret_data::ammo_options() const
+{
+    std::set<itype_id> opts;
+
+    if( !veh || !part ) {
+        return opts;
+    }
+
+    if( !part->info().has_flag( "USE_TANKS" ) ) {
+        if( part->base.ammo_current() != "null" ) {
+            opts.insert( part->base.ammo_current() );
+        }
+
+    } else {
+        for( const auto &e : veh->fuels_left() ) {
+            const itype *fuel = item::find_type( e.first );
+            if( fuel->ammo && fuel->ammo->type.count( part->base.ammo_type() ) &&
+                e.second >= part->base.ammo_required() ) {
+
+                opts.insert( fuel->get_id() );
+            }
+        }
+    }
+
+    return opts;
+}
+
+bool turret_data::ammo_select( const itype_id &ammo )
+{
+    if( !ammo_options().count( ammo ) ) {
         return false;
     }
 
-    turret_reload( pt );
+    part->ammo_pref = ammo;
+    return true;
+}
 
-    switch( turret_query( pt ) ) {
-        case turret_status::no_ammo:
-            add_msg( m_bad, string_format( _( "The %s is out of ammo." ), pt.name().c_str() ).c_str() );
-            break;
+std::set<std::string> turret_data::ammo_effects() const
+{
+    if( !veh || !part ) {
+        return std::set<std::string>();
+    }
+    auto res = part->base.ammo_effects();
+    if( part->info().has_flag( "USE_TANKS" ) && ammo_data() ) {
+        res.insert( ammo_data()->ammo->ammo_effects.begin(), ammo_data()->ammo->ammo_effects.end() );
+    }
+    return res;
+}
 
-        case turret_status::no_power:
-            add_msg( m_bad, string_format( _( "The %s is not powered." ), pt.name().c_str() ).c_str() );
-            break;
+int turret_data::range() const
+{
+    if( !veh || !part ) {
+        return 0;
+    }
+    int res = part->base.gun_range();
+    if( part->info().has_flag( "USE_TANKS" ) && ammo_data() ) {
+        res += ammo_data()->ammo->range;
+    }
+    return res;
+}
 
-        case turret_status::ready: {
-            // Clone the shooter and place them at turret on roof
-            auto shooter = g->u;
-            shooter.setpos( global_part_pos3( pt ) );
-            shooter.add_effect( effect_on_roof, 1 );
-            shooter.recoil = abs( velocity ) / 100 / 4;
+bool turret_data::can_reload() const
+{
+    if( !veh || !part || part->info().has_flag( "USE_TANKS" ) ) {
+        return false;
+    }
+    if( !part->base.magazine_integral() ) {
+        return true; // always allow changing of magazines
+    }
+    return part->base.ammo_remaining() < part->base.ammo_capacity();
+}
 
-            tripoint pos = shooter.pos();
-            auto trajectory = g->pl_target_ui( pos, gun.gun_range(), &gun, TARGET_MODE_TURRET_MANUAL );
-            g->draw_ter();
+bool turret_data::can_unload() const
+{
+    if( !veh || !part || part->info().has_flag( "USE_TANKS" ) ) {
+        return false;
+    }
+    return part->base.ammo_remaining() || part->base.magazine_current();
+}
 
-            if( !trajectory.empty() ) {
-                auto mode = gun.gun_current_mode();
-                shots = shooter.fire_gun( trajectory.back(), mode.qty, *mode );
-            }
-            break;
-        }
-
-        default:
-            debugmsg( "unknown turret status" );
-            break;
+turret_data::status turret_data::query() const
+{
+    if( !veh || !part ) {
+        return status::invalid;
     }
 
-    turret_unload( pt );
-    drain( fuel_type_battery, gun.get_gun_ups_drain() * shots );
+    if( part->info().has_flag( "USE_TANKS" ) ) {
+        if( veh->fuel_left( ammo_current() ) < part->base.ammo_required() ) {
+            return status::no_ammo;
+        }
 
+    } else {
+        if( !part->base.ammo_sufficient() ) {
+            return status::no_ammo;
+        }
+    }
+
+    auto ups = part->base.get_gun_ups_drain() * part->base.gun_current_mode().qty;
+    if( ups > veh->fuel_left( fuel_type_battery ) ) {
+        return status::no_power;
+    }
+
+    return status::ready;
+}
+
+void turret_data::prepare_fire( player &p )
+{
+    // prevent turrets from shooting their own vehicles
+    p.add_effect( effect_on_roof, 1_turns );
+
+    // turrets are subject only to recoil_vehicle()
+    cached_recoil = p.recoil;
+    p.recoil = 0;
+
+    // set fuel tank fluid as ammo, if appropriate
+    if( part->info().has_flag( "USE_TANKS" ) ) {
+        auto mode = base()->gun_current_mode();
+        long qty  = mode->ammo_required();
+        long fuel_left = veh->fuel_left( ammo_current() );
+        mode->ammo_set( ammo_current(), std::min( qty * mode.qty, fuel_left ) );
+    }
+}
+
+void turret_data::post_fire( player &p, int shots )
+{
+    // remove any temporary recoil adjustments
+    p.remove_effect( effect_on_roof );
+    p.recoil = cached_recoil;
+
+    auto mode = base()->gun_current_mode();
+
+    // handle draining of vehicle tanks and UPS charges, if applicable
+    if( part->info().has_flag( "USE_TANKS" ) ) {
+        veh->drain( ammo_current(), mode->ammo_required() * shots );
+        mode->ammo_unset();
+    }
+
+    veh->drain( fuel_type_battery, mode->get_gun_ups_drain() * shots );
+}
+
+int turret_data::fire( player &p, const tripoint &target )
+{
+    if( !veh || !part ) {
+        return 0;
+    }
+    int shots = 0;
+    auto mode = base()->gun_current_mode();
+
+    prepare_fire( p );
+    shots = p.fire_gun( target, mode.qty, *mode );
+    post_fire( p, shots );
     return shots;
 }
 
@@ -141,6 +319,10 @@ void vehicle::turrets_set_targeting()
 
         sel = menu.ret;
         turrets[ sel ]->enabled = !turrets[ sel ]->enabled;
+
+        // clear the turret's current targets to prevent unwanted auto-firing
+        tripoint pos = locations[ sel ];
+        turrets[ sel ]->reset_target( pos );
     }
 }
 
@@ -170,7 +352,7 @@ void vehicle::turrets_set_mode()
 
         for( auto &p : turrets ) {
             menu.addentry( -1, true, MENU_AUTOASSIGN, "%s [%s]",
-                           p->name().c_str(), p->base.gun_current_mode().mode.c_str() );
+                           p->name().c_str(), p->base.gun_current_mode().name() );
         }
 
         menu.query();
@@ -183,25 +365,38 @@ void vehicle::turrets_set_mode()
     }
 }
 
-bool vehicle::turrets_aim()
+bool vehicle::turrets_aim( bool manual, bool automatic, vehicle_part *tur_part )
 {
-    // reload all turrets and clear any existing targets
+    // Only work with turrets we want and are able to fire
     auto opts = turrets();
-    for( auto e : opts ) {
-        turret_reload( *e );
-        e->target.first  = tripoint_min;
-        e->target.second = tripoint_min;
+    auto last = opts.end();
+    opts.erase( std::remove_if( opts.begin(), last, [&]( vehicle_part * vp ) {
+        bool available = turret_query( *vp ).query() == turret_data::status::ready;
+        bool mode_ok = ( ( !vp->enabled && manual ) || ( vp->enabled && automatic ) );
+        bool part_wanted = mode_ok || ( tur_part && vp == tur_part );
+        return !available || !part_wanted;
+    } ), last );
+
+    if( opts.empty() ) {
+        add_msg( m_warning, _( "Can't aim turrets: all turrets are offline" ) );
+        return false;
     }
 
+    // Clear any existing targets for turrets we want to aim
+    std::for_each( opts.begin(), opts.end(), [&]( vehicle_part * vp ) {
+        vp->reset_target( global_part_pos3( *vp ) );
+    } );
+
     // find radius of a circle centered at u encompassing all points turrets can aim at
-    int range = std::accumulate( opts.begin(), opts.end(), 0, [&]( const int lhs,
-    const vehicle_part * e ) {
-        if( turret_query( *e ) != turret_status::ready ) {
+    int range = std::accumulate( opts.begin(), opts.end(), 0, [&]( const int lhs, vehicle_part * e ) {
+
+        const auto gun = turret_query( *e );
+        if( gun.query() != turret_data::status::ready ) {
             return lhs;
         }
 
         tripoint pos = global_part_pos3( *e );
-        const int rng = e->base.gun_range();
+        const int rng = gun.range();
 
         int res = 0;
         res = std::max( res, rl_dist( g->u.pos(), { pos.x + rng, pos.y, pos.z } ) );
@@ -211,177 +406,172 @@ bool vehicle::turrets_aim()
         return std::max( lhs, res );
     } );
 
-    // fake gun item to aim
-    item pointer( "vehicle_pointer" );
-
-    tripoint pos = g->u.pos();
     std::vector<tripoint> trajectory;
+    trajectory = target_handler().target_ui( g->u, TARGET_MODE_TURRET, nullptr, range );
 
-    if( opts.empty() ) {
-        add_msg( m_warning, _( "Can't aim turrets: all turrets are offline" ) );
-    } else {
-        trajectory = g->pl_target_ui( pos, range, &pointer, TARGET_MODE_TURRET );
-        g->draw_ter();
-    }
-
-    if( !trajectory.empty() ) {
+    bool got_target = !trajectory.empty();
+    if( got_target ) {
         // set target for any turrets in range
-        for( auto e : turrets( trajectory.back() ) ) {
-            e->target.second = trajectory.back();
+        for( vehicle_part *vp : opts ) {
+            tripoint targ = trajectory.back();
+            if( rl_dist( global_part_pos3( *vp ), targ ) <= vp->base.gun_range() ) {
+                vp->target.second = targ;
+            }
         }
         ///\EFFECT_INT speeds up aiming of vehicle turrets
         g->u.moves = std::min( 0, g->u.moves - 100 + ( 5 * g->u.int_cur ) );
     }
 
-    for( auto e : opts ) {
-        turret_unload( *e );
-    }
-
-    return !trajectory.empty();
+    return got_target;
 }
 
-void vehicle::turret_reload( vehicle_part &pt )
+int vehicle::turrets_aim_and_fire( bool manual, bool automatic, vehicle_part *tur_part )
 {
-    item &gun = pt.base;
-    if( !gun.is_gun() || !gun.ammo_type() ) {
-        return;
+    int shots = 0;
+    auto fire_if_able = [&]( vehicle_part * vp ) {
+        if( vp->target.first != vp->target.second && !vp->enabled ) {
+            turret_data turret = this->turret_query( *vp );
+            npc cpu = get_targeting_npc( *vp );
+            shots += turret.fire( cpu, vp->target.second );
+            vp->reset_target( global_part_pos3( *vp ) );
+        }
+    };
+
+    if( turrets_aim( manual, automatic, tur_part ) ) {
+        // turrets_aim already set the targets for any available turrets that can reach the target.
+        auto const &turs = turrets();
+        std::for_each( turs.begin(), turs.end(), fire_if_able );
     }
 
-    // try to reload using stored fuel from onboard vehicle tanks
-    for( const auto &e : fuels_left() ) {
-        const itype *fuel = item::find_type( e.first );
-        if( !fuel->ammo || e.second < gun.ammo_required() ) {
-            continue;
-        }
+    return shots;
+}
 
-        if( ( gun.ammo_current() == "null" && fuel->ammo->type == gun.ammo_type() ) ||
-            ( gun.ammo_current() == e.first ) ) {
-
-            int qty = gun.ammo_remaining();
-            gun.ammo_set( e.first, e.second );
-
-            drain( e.first, gun.ammo_remaining() - qty );
-
-            return;
-        }
+int vehicle::turrets_aim_single( vehicle_part *tur_part )
+{
+    int shots = 0;
+    if( tur_part ) {
+        return turrets_aim_and_fire( false, false, tur_part );
     }
 
-    // otherwise try to reload from turret cargo space
-    for( auto it = pt.items.begin(); it != pt.items.end(); ++it ) {
-        if( it->is_ammo() &&
-            ( ( gun.ammo_current() == "null" && it->ammo_type() == gun.ammo_type() ) ||
-              ( gun.ammo_current() == it->typeId() ) ) ) {
+    std::vector<std::string> options( 1, _( "Cancel" ) );
+    std::vector<vehicle_part *> guns( 1, nullptr );
 
-            int qty = gun.ammo_remaining();
-            gun.ammo_set( it->typeId(), it->charges );
-
-            it->charges -= gun.ammo_remaining() - qty;
-
-            if( it->charges <= 0 ) {
-                pt.items.erase( it );
+    // Get a group of turrets that are ready to fire
+    for( auto &t : turrets() ) {
+        if( t != nullptr ) {
+            turret_data data = turret_query( *t );
+            if( data.query() == turret_data::status::ready ) {
+                options.push_back( t->name() );
+                guns.push_back( t );
             }
-
-            return;
         }
     }
+
+    vehicle_part *chosen;
+
+    if( options.size() > 1 ) {
+        chosen = guns[( uimenu( false, _( "Aim which turret?" ), options ) ) - 1 ];
+    } else {
+        add_msg( m_warning, _( "None of the turrets are available to fire." ) );
+        return shots;
+    }
+
+    if( chosen !=  nullptr ) {
+        shots = turrets_aim_and_fire( false, false, chosen );
+    }
+
+    return shots;
+
 }
 
-void vehicle::turret_unload( vehicle_part &pt )
+npc vehicle::get_targeting_npc( vehicle_part &pt )
 {
-    item &gun = pt.base;
-    if( !gun.is_gun() || !gun.ammo_type() ||
-        gun.ammo_current() == "null" || gun.ammo_remaining() == 0 ) {
-        return;
-    }
+    // Make a fake NPC to represent the targeting system
+    npc cpu;
+    cpu.set_fake( true );
+    cpu.name = string_format( pgettext( "vehicle turret", "The %s" ), pt.name().c_str() );
+    // turrets are subject only to recoil_vehicle()
+    cpu.recoil = 0;
 
-    // return fuels to onboard vehicle tanks
-    if( fuel_capacity( gun.ammo_current() ) > 0 ) {
-        refill( gun.ammo_current(), gun.ammo_remaining() );
-        gun.ammo_unset();
-        return;
-    }
+    // These might all be affected by vehicle part damage, weather effects, etc.
+    cpu.set_skill_level( pt.get_base().gun_skill(), 8 );
+    cpu.set_skill_level( skill_id( "gun" ), 4 );
 
-    // otherwise unload to cargo space
-    item ammo( gun.ammo_current(), calendar::turn, gun.ammo_remaining() );
-    gun.ammo_unset();
-
-    // @todo check ammo is not liquid or otherwise irrecoverable
-
-    for( item &e : pt.items ) {
-        if( e.merge_charges( ammo ) ) {
-            return;
-        }
-    }
-    pt.items.push_back( std::move( ammo ) );
+    cpu.str_cur = 16;
+    cpu.dex_cur = 8;
+    cpu.per_cur = 12;
+    cpu.setpos( global_part_pos3( pt ) );
+    // Assume vehicle turrets are friendly to the player.
+    cpu.set_attitude( NPCATT_FOLLOW );
+    return cpu;
 }
 
 int vehicle::automatic_fire_turret( vehicle_part &pt )
 {
-    item &gun = pt.base;
+    turret_data gun = turret_query( pt );
+
+    int shots = 0;
+
+    if( gun.query() != turret_data::status::ready ) {
+        return shots;
+    }
+
+    // The position of the vehicle part.
     tripoint pos = global_part_pos3( pt );
 
-    npc tmp;
-    tmp.set_fake( true );
-    tmp.add_effect( effect_on_roof, 1 );
-    tmp.name = rmp_format( _( "<veh_player>The %s" ), pt.name().c_str() );
-    tmp.set_skill_level( gun.gun_skill(), 8 );
-    tmp.set_skill_level( skill_id( "gun" ), 4 );
-    tmp.recoil = abs( velocity ) / 100 / 4;
-    tmp.setpos( pos );
-    tmp.str_cur = 16;
-    tmp.dex_cur = 8;
-    tmp.per_cur = 12;
-    // Assume vehicle turrets are defending the player.
-    tmp.attitude = NPCATT_DEFEND;
+    // Create the targeting computer's npc
+    npc cpu = get_targeting_npc( pt );
 
     int area = aoe_size( gun.ammo_effects() );
     if( area > 0 ) {
-        area += area == 1 ? 1 : 2; // Pad a bit for less friendly fire
+        // Pad a bit for less friendly fire
+        area += area == 1 ? 1 : 2;
     }
 
-    tripoint targ = pos;
+    const bool u_see = g->u.sees( pos );
+    // The current target of the turret.
     auto &target = pt.target;
     if( target.first == target.second ) {
-        // Manual target not set, find one automatically
-        const bool u_see = g->u.sees( pos );
+        // Manual target not set, find one automatically.
+        // BEWARE: Calling turret_data.fire on tripoint min coordinates starts a crash
+        //      triggered at `trajectory.insert( trajectory.begin(), source )` at ranged.cpp:236
+        pt.reset_target( pos );
         int boo_hoo;
 
-        // @todo calculate chance to hit and cap range based upon this
-        int range = std::min( gun.gun_range(), 12 );
-        Creature *auto_target = tmp.auto_find_hostile_target( range, boo_hoo, area );
+        // @todo: calculate chance to hit and cap range based upon this
+        int max_range = 12;
+        int range = std::min( gun.range(), max_range );
+        Creature *auto_target = cpu.auto_find_hostile_target( range, boo_hoo, area );
         if( auto_target == nullptr ) {
             if( u_see && boo_hoo ) {
                 add_msg( m_warning, ngettext( "%s points in your direction and emits an IFF warning beep.",
                                               "%s points in your direction and emits %d annoyed sounding beeps.",
                                               boo_hoo ),
-                         tmp.name.c_str(), boo_hoo );
+                         cpu.name.c_str(), boo_hoo );
             }
-            return 0;
+            return shots;
         }
 
-        targ = auto_target->pos();
-    } else if( target.first != target.second ) {
-        // Target set manually
-        // Make sure we didn't move between aiming and firing (it's a bug if we did)
-        if( targ != target.first ) {
-            target.second = target.first;
-            return 0;
-        }
+        target.second = auto_target->pos();
 
-        targ = target.second;
-        // Remove the target
-        target.second = target.first;
     } else {
-        // Shouldn't happen
-        target.first = target.second;
-        return 0;
+        // Target is already set, make sure we didn't move after aiming (it's a bug if we did).
+        if( pos != target.first ) {
+            target.second = target.first;
+            debugmsg( "%s moved after aiming but before it could fire.", cpu.name.c_str() );
+            return shots;
+        }
     }
 
-    // notify player if player can see the shot
-    if( g->u.sees( pos ) ) {
+    // Get the turret's target and reset it
+    tripoint targ = target.second;
+    pt.reset_target( pos );
+
+    shots = gun.fire( cpu, targ );
+
+    if( shots && u_see && !g->u.sees( targ ) ) {
         add_msg( _( "The %1$s fires its %2$s!" ), name.c_str(), pt.name().c_str() );
     }
 
-    auto mode = gun.gun_current_mode();
-    return tmp.fire_gun( targ, mode.qty, *mode );
+    return shots;
 }

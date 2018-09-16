@@ -1,4 +1,3 @@
-tests/cata_test
 cataclysm
 cataclysm-tiles
 chkjson*
@@ -6,6 +5,7 @@ chkjson*
 data/*.template
 templates/
 save/
+mods/
 graveyard/
 memorial/
 obj/
@@ -16,6 +16,7 @@ cataclysmdda-*
 objwin/
 src/version.h
 src/lua/catabindings.cpp
+tools/format/json_formatter.cgi
 CataclysmWin.cscope_file_list
 CataclysmWin.depend
 CataclysmWin.layout
@@ -28,6 +29,8 @@ build/
 dep/
 *.o
 *.d
+*.a
+cmake-build-debug/
 
 data/font/
 config/
@@ -47,6 +50,7 @@ Debug*/
 *.opensdf
 *.user
 *.vcxproj.filters
+.vscode/
 
 # Temporary and backup files
 *~
@@ -59,7 +63,7 @@ gmon.out
 # System Files
 Thumbs.db
 .DS_Store
-core
+._.DS_Store
 tags
 cscope.*
 
@@ -97,10 +101,13 @@ Cataclysm.dmg
 # Jetbrains CLion
 .idea/
 
-# linked test executable
+# test executables and generated data
+tests/cata_test
 tests/line_test
 tests/map_iterator_test
 tests/shadowcasting_test
+tests/data/jsionized_overmap.sav
+
 # static library used to link the test executable
 cataclysm.a
 
@@ -116,6 +123,9 @@ msvc-full-features/ipch
 lnk*.tmp
 Cataclysm.exe.lastcodeanalysissucceeded
 
+#Visual Studio 2017
+msvc-full-features/PredictedInputCache_Debug_x64.dat
+
 # cppcheck
 *cppcheck.xml
 *.cppcheck
@@ -128,3 +138,21 @@ Cataclysm.nam
 
 # Distribution script results
 msvc-full-features/distribution
+
+# Transifex Client
+.tx/
+
+# Snapcraft build directories
+prime
+snap
+stage
+
+# Snapcraft build file
+*.snap
+
+# Eclipse IDE
+.cproject
+.settings/
+
+# Apple Xcode IDE
+Xcode/

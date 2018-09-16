@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "json.h"
 #include "item.h"
+#include "translations.h"
 
 #include <unordered_map>
 
@@ -18,27 +19,19 @@ ammo_map_t &all_ammunition_types()
 
 void ammunition_type::load_ammunition_type( JsonObject &jsobj )
 {
-    auto const result = all_ammunition_types().insert( std::make_pair(
-                            ammotype( jsobj.get_string( "id" ) ), ammunition_type {} ) );
-
-    if( !result.second ) {
-        debugmsg( "duplicate ammo id: %s", result.first->first.c_str() );
-    }
-
-    auto &ammo = result.first->second;
-    ammo.name_             = jsobj.get_string( "name" );
-    ammo.default_ammotype_ = jsobj.get_string( "default" );
+    ammunition_type &res = all_ammunition_types()[ ammotype( jsobj.get_string( "id" ) ) ];
+    res.name_             = jsobj.get_string( "name" );
+    res.default_ammotype_ = jsobj.get_string( "default" );
 }
 
-template<>
-const string_id<ammunition_type> string_id<ammunition_type>::NULL_ID( "NULL" );
-
+/** @relates string_id */
 template<>
 bool string_id<ammunition_type>::is_valid() const
 {
     return all_ammunition_types().count( *this ) > 0;
 }
 
+/** @relates string_id */
 template<>
 ammunition_type const &string_id<ammunition_type>::obj() const
 {
@@ -76,4 +69,9 @@ void ammunition_type::check_consistency()
             debugmsg( "ammo type %s has invalid default ammo %s", id.c_str(), at.c_str() );
         }
     }
+}
+
+std::string ammunition_type::name() const
+{
+    return _( name_.c_str() );
 }

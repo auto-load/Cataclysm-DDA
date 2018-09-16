@@ -1,3 +1,4 @@
+#pragma once
 #ifndef BASECAMP_H
 #define BASECAMP_H
 
@@ -32,6 +33,5 @@ class basecamp
         std::string name;
         int posx, posy; // location of associated bulletin board
 };
-
 
 #endif

@@ -1,18 +1,23 @@
+#pragma once
 #ifndef ITEM_LOCATION_H
 #define ITEM_LOCATION_H
 
 #include <memory>
+#include <list>
 
 struct tripoint;
 class item;
 class Character;
 class map_cursor;
 class vehicle_cursor;
+class JsonIn;
+class JsonOut;
 
 /**
- * A class for easy removal of used items.
- * Ensures the item exists, but not that the character/vehicle does.
- * Should not be kept, but removed before the end of turn.
+ * A lightweight handle to an item independent of it's location
+ * Unlike a raw pointer can be (de-)serialized to/from JSON
+ * Provides a generic interface of querying, obtaining and removing an item
+ * Is invalidated by many operations (including copying of the item)
  */
 class item_location
 {
@@ -34,8 +39,16 @@ class item_location
         static const item_location nowhere;
 
         item_location( Character &ch, item *which );
+        item_location( Character &ch, std::list<item> *which );
         item_location( const map_cursor &mc, item *which );
+        item_location( const map_cursor &mc, std::list<item> *which );
         item_location( const vehicle_cursor &vc, item *which );
+        item_location( const vehicle_cursor &vc, std::list<item> *which );
+
+        void serialize( JsonOut &js ) const;
+        void deserialize( JsonIn &js );
+
+        long charges_in_stack( unsigned int countOnly ) const;
 
         bool operator==( const item_location &rhs ) const;
         bool operator!=( const item_location &rhs ) const;
@@ -59,6 +72,7 @@ class item_location
         std::string describe( const Character *ch = nullptr ) const;
 
         /** Move an item from the location to the character inventory
+         *  @param ch Character who's inventory gets the item
          *  @param qty if specified limits maximum obtained charges
          *  @warning caller should restack inventory if item is to remain in it
          *  @warning all further operations using this class are invalid
@@ -78,13 +92,21 @@ class item_location
         item *get_item();
         const item *get_item() const;
 
+        /**
+         * Clones this instance
+         * @warning usage should be restricted to implementing custom copy-constructors
+         */
+        item_location clone() const;
+
     private:
         class impl;
-        std::unique_ptr<impl> ptr;
+        std::shared_ptr<impl> ptr;
 
-        class item_on_map;
-        class item_on_person;
-        class item_on_vehicle;
+        /* Not implemented on purpose. This triggers a compiler / linker
+         * error when used in any implicit conversion. It prevents the
+         * implicit conversion to int. */
+        template<typename T>
+        operator T() const;
 };
 
 #endif

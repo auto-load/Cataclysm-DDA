@@ -6,15 +6,15 @@
     "weight": 230,
     "volume": 1,
     "price": 40000,
-    "count": 4,
-    "stack_size": 4,
     "material": [ "steel", "powder" ],
     "symbol": "=",
     "color": "yellow",
+    "count": 4,
+    "stack_size": 4,
     "ammo_type": "40mm",
     "casing": "40mm_casing",
-    "damage": 5,
     "range": 40,
+    "damage": 5,
     "dispersion": 30,
     "recoil": 225,
     "effects": [ "COOKOFF", "NEVER_MISFIRES" ]
@@ -32,7 +32,6 @@
     "copy-from": "40mm_grenade",
     "type": "AMMO",
     "name": "40mm concussive",
-    "name_plural": "40mm concussive",
     "description": "A 40mm grenade with a concussive explosion load.",
     "extend": { "effects": [ "EXPLOSIVE" ] }
   },
@@ -42,7 +41,8 @@
     "type": "AMMO",
     "name": "40mm flare",
     "description": "A 40mm signal flare.  It will burn brightly for up to a minute, and will also leave a streak of smoke cover in its wake.",
-    "extend": { "effects": [ "TRAIL", "FLARE" ] }
+    "drop": "handflare_lit",
+    "extend": { "effects": [ "TRAIL", "NO_EMBED" ] }
   },
   {
     "id": "40mm_flashbang",
@@ -58,17 +58,13 @@
     "type": "AMMO",
     "name": "40mm flechette",
     "description": "A 40mm grenade with an armor-piercing flechette load.",
-    "relative": {
-      "damage": -10,
-      "pierce": 30
-    }
+    "relative": { "damage": -10, "pierce": 30 }
   },
   {
     "id": "40mm_frag",
     "copy-from": "40mm_grenade",
     "type": "AMMO",
     "name": "40mm frag",
-    "name_plural": "40mm frag",
     "description": "A 40mm grenade with a small explosive load and a high number of damaging fragments.",
     "extend": { "effects": [ "FRAG" ] }
   },
@@ -87,8 +83,8 @@
     "type": "AMMO",
     "name": "40mm buckshot",
     "description": "A 40mm grenade with a buckshot load.",
-    "damage": 70,
     "range": 12,
+    "damage": 70,
     "recoil": 525,
     "extend": { "effects": [ "SHOT" ] }
   },
@@ -97,17 +93,18 @@
     "copy-from": "40mm_grenade",
     "type": "AMMO",
     "name": "40mm smoke cover",
-    "name_plural": "40mm smoke cover",
     "description": "A 40mm grenade designed to provide smoke cover.",
-    "extend": { "effects": [ "SMOKE_BIG" ] }
+    "drop": "smokebomb_act",
+    "extend": { "effects": [ "TRAIL", "NO_EMBED" ] }
   },
   {
     "id": "40mm_teargas",
     "copy-from": "40mm_grenade",
     "type": "AMMO",
     "name": "40mm teargas",
-    "name_plural": "40mm teargas",
+    "name_plural": "40mm teargas grenades",
     "description": "A 40mm grenade with a teargas load.  It will burst in a cloud of highly incapacitating gas.",
-    "extend": { "effects": [ "TEARGAS" ] }
+    "drop": "gasbomb_act",
+    "extend": { "effects": [ "NO_EMBED" ] }
   }
 ]

@@ -2,6 +2,8 @@
 #include "path_info.h"
 #include "output.h"
 #include "filesystem.h"
+#include "cursesdef.h"
+#include "input.h"
 #include <time.h>
 #include <cassert>
 #include <cstdlib>
@@ -17,9 +19,18 @@
 #endif
 
 #ifdef BACKTRACE
+#if defined _WIN32 || defined _WIN64
+#include "platform_win.h"
+#include <dbghelp.h>
+#else
 #include <execinfo.h>
 #include <stdlib.h>
 #endif
+#endif
+
+#ifdef TILES
+#include <SDL.h>
+#endif // TILES
 
 // Static defines                                                   {{{1
 // ---------------------------------------------------------------------
@@ -32,7 +43,11 @@ static int debugLevel = D_ERROR;
 static int debugClass = D_MAIN;
 #endif
 
-bool debug_fatal = false;
+extern bool test_mode;
+
+/** When in @ref test_mode will be set if any debugmsg are emitted */
+bool test_dirty = false;
+
 bool debug_mode = false;
 
 namespace
@@ -42,21 +57,17 @@ std::set<std::string> ignored_messages;
 
 }
 
-void realDebugmsg( const char *filename, const char *line, const char *funcname, const char *mes,
-                   ... )
+void realDebugmsg( const char *filename, const char *line, const char *funcname,
+                   const std::string &text )
 {
     assert( filename != nullptr );
     assert( line != nullptr );
     assert( funcname != nullptr );
 
-    va_list ap;
-    va_start( ap, mes );
-    const std::string text = vstring_format( mes, ap );
-    va_end( ap );
-
-    if( debug_fatal ) {
-        throw std::runtime_error( string_format( "%s:%s [%s] %s", filename, line, funcname,
-                                  text.c_str() ) );
+    if( test_mode ) {
+        test_dirty = true;
+        std::cerr << filename << ":" << line << " [" << funcname << "] " << text << std::endl;
+        return;
     }
 
     DebugLog( D_ERROR, D_MAIN ) << filename << ":" << line << " [" << funcname << "] " << text;
@@ -68,35 +79,65 @@ void realDebugmsg( const char *filename, const char *line, const char *funcname,
         return;
     }
 
-    if( stdscr == nullptr ) {
-        std::cerr << text.c_str() << std::endl;
+    if( !catacurses::stdscr ) {
+        std::cerr << text << std::endl;
         abort();
     }
 
-    fold_and_print( stdscr, 0, 0, getmaxx( stdscr ), c_ltred,
-                    "\n \n" // Looks nicer with some space
-                    " DEBUG    : %s\n \n"
-                    " FUNCTION : %s\n"
-                    " FILE     : %s\n"
-                    " LINE     : %s\n \n"
-                    " Press <color_white>spacebar</color> to continue the game...\n"
-                    " Press <color_white>I</color> (or <color_white>i</color>) to also ignore this particular message in the future...",
-                    text.c_str(), funcname, filename, line );
+    std::string formatted_report =
+        string_format( // developer-facing error report. INTENTIONALLY UNTRANSLATED!
+            " DEBUG    : %s\n \n"
+            " FUNCTION : %s\n"
+            " FILE     : %s\n"
+            " LINE     : %s\n",
+            text.c_str(), funcname, filename, line
+        );
 
+    fold_and_print( catacurses::stdscr, 0, 0, getmaxx( catacurses::stdscr ), c_light_red,
+                    "\n \n" // Looks nicer with some space
+                    " %s\n" // translated user string: error notification
+                    " -----------------------------------------------------------\n"
+                    "%s"
+                    " -----------------------------------------------------------\n"
+                    " %s\n" // translated user string: space to continue
+                    " %s\n" // translated user string: ignore key
+#ifdef TILES
+                    " %s\n" // translated user string: copy
+#endif // TILES
+                    , _( "An error has occurred! Written below is the error report:" ),
+                    formatted_report,
+                    _( "Press <color_white>space bar</color> to continue the game." ),
+                    _( "Press <color_white>I</color> (or <color_white>i</color>) to also ignore this particular message in the future." )
+#ifdef TILES
+                    , _( "Press <color_white>C</color> (or <color_white>c</color>) to copy this message to the clipboard." )
+#endif // TILES
+                  );
+
+#ifdef __ANDROID__
+    input_context ctxt( "DEBUG_MSG" );
+    ctxt.register_manual_key( 'I' );
+    ctxt.register_manual_key( ' ' );
+#endif
     for( bool stop = false; !stop; ) {
-        switch( getch() ) {
+        switch( inp_mngr.get_input_event().get_first_input() ) {
+#ifdef TILES
+            case 'c':
+            case 'C':
+                SDL_SetClipboardText( formatted_report.c_str() );
+                break;
+#endif // TILES
             case 'i':
             case 'I':
                 ignored_messages.insert( msg_key );
-            // Falling through
+            /* fallthrough */
             case ' ':
                 stop = true;
                 break;
         }
     }
 
-    werase( stdscr );
-    refresh();
+    werase( catacurses::stdscr );
+    catacurses::refresh();
 }
 
 // Normal functions                                                 {{{1
@@ -117,9 +158,26 @@ void limitDebugClass( int class_bitmask )
 // Debug only                                                       {{{1
 // ---------------------------------------------------------------------
 
+#ifdef BACKTRACE
+#if defined _WIN32 || defined _WIN64
+int constexpr module_path_len = 512;
+// on some systems the number of frames to capture have to be less than 63 according to the documentation
+int constexpr bt_cnt = 62;
+int constexpr max_name_len = 512;
+// ( max_name_len - 1 ) because SYMBOL_INFO already contains a TCHAR
+int constexpr sym_size = sizeof( SYMBOL_INFO ) + ( max_name_len - 1 ) * sizeof( TCHAR );
+static char mod_path[module_path_len];
+static PVOID bt[bt_cnt];
+static struct {
+    alignas( SYMBOL_INFO ) char storage[sym_size];
+} sym_storage;
+static SYMBOL_INFO &sym = reinterpret_cast<SYMBOL_INFO &>( sym_storage );
+#else
 #define TRACE_SIZE 20
 
 void *tracePtrs[TRACE_SIZE];
+#endif
+#endif
 
 // Debug Includes                                                   {{{2
 // ---------------------------------------------------------------------
@@ -140,7 +198,7 @@ struct NullBuf : public std::streambuf {
 struct DebugFile {
     DebugFile();
     ~DebugFile();
-    void init( std::string filename );
+    void init( const std::string &filename );
     void deinit();
 
     std::ofstream &currentTime();
@@ -175,7 +233,7 @@ void DebugFile::deinit()
     file.close();
 }
 
-void DebugFile::init( std::string filename )
+void DebugFile::init( const std::string &filename )
 {
     this->filename = filename;
     const std::string oldfile = filename + ".prev";
@@ -365,6 +423,37 @@ std::ostream &DebugLog( DebugLevel lev, DebugClass cl )
         // Backtrace on error.
 #ifdef BACKTRACE
         if( lev == D_ERROR ) {
+#if defined _WIN32 || defined _WIN64
+            sym.SizeOfStruct = sizeof( SYMBOL_INFO );
+            sym.MaxNameLen = max_name_len;
+            USHORT num_bt = CaptureStackBackTrace( 0, bt_cnt, bt, NULL );
+            HANDLE proc = GetCurrentProcess();
+            for( USHORT i = 0; i < num_bt; ++i ) {
+                DWORD64 off;
+                debugFile.file << "\n\t(";
+                if( SymFromAddr( proc, ( DWORD64 ) bt[i], &off, &sym ) ) {
+                    debugFile.file << sym.Name << "+0x" << std::hex << off << std::dec;
+                }
+                debugFile.file << "@" << bt[i];
+                DWORD64 mod_base = SymGetModuleBase64( proc, ( DWORD64 ) bt[i] );
+                if( mod_base ) {
+                    debugFile.file << "[";
+                    DWORD mod_len = GetModuleFileName( ( HMODULE ) mod_base, mod_path, module_path_len );
+                    // mod_len == module_path_len means insufficient buffer
+                    if( mod_len > 0 && mod_len < module_path_len ) {
+                        char const *mod_name = mod_path + mod_len;
+                        for( ; mod_name > mod_path && *( mod_name - 1 ) != '\\'; --mod_name ) {
+                        }
+                        debugFile.file << mod_name;
+                    } else {
+                        debugFile.file << "0x" << std::hex << mod_base << std::dec;
+                    }
+                    debugFile.file << "+0x" << std::hex << ( uintptr_t ) bt[i] - mod_base << std::dec << "]";
+                }
+                debugFile.file << "), ";
+            }
+            debugFile.file << "\n\t";
+#else
             int count = backtrace( tracePtrs, TRACE_SIZE );
             char **funcNames = backtrace_symbols( tracePtrs, count );
             for( int i = 0; i < count; ++i ) {
@@ -372,6 +461,7 @@ std::ostream &DebugLog( DebugLevel lev, DebugClass cl )
             }
             debugFile.file << "\n\t";
             free( funcNames );
+#endif
         }
 #endif
 

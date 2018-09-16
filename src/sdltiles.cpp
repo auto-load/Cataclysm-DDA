@@ -1,5 +1,11 @@
 #if (defined TILES)
-#include "catacurse.h"
+#include "game.h"
+#include "cata_utility.h"
+#include "color_loader.h"
+#include "cursesport.h"
+#include "font_loader.h"
+#include "game_ui.h"
+#include "loading_ui.h"
 #include "options.h"
 #include "output.h"
 #include "input.h"
@@ -9,6 +15,15 @@
 #include "debug.h"
 #include "player.h"
 #include "translations.h"
+#include "cata_tiles.h"
+#include "get_version.h"
+#include "init.h"
+#include "path_info.h"
+#include "string_formatter.h"
+#include "filesystem.h"
+#include "lightmap.h"
+#include "rng.h"
+#include <algorithm>
 #include <cstring>
 #include <vector>
 #include <fstream>
@@ -16,22 +31,10 @@
 #include <sys/stat.h>
 #include <memory>
 #include <stdexcept>
-#include "cata_tiles.h"
-#include "get_version.h"
-#include "init.h"
-#include "path_info.h"
-#include "filesystem.h"
-#include "map.h"
-#include "game.h"
-#include "lightmap.h"
-#include "rng.h"
+#include <limits>
 
-//TODO replace these includes with filesystem.h
-#ifdef _MSC_VER
-#   include "wdirent.h"
-#   include <direct.h>
-#else
-#   include <dirent.h>
+#ifdef __linux__
+#   include <cstdlib> // getenv()/setenv()
 #endif
 
 #if (defined _WIN32 || defined WINDOWS)
@@ -51,6 +54,16 @@
 #   include "sounds.h"
 #endif
 
+#ifdef __ANDROID__
+#include "worldfactory.h"
+#include "action.h"
+#include "map.h"
+#include "vehicle.h"
+#include "vpart_position.h"
+#include "inventory.h"
+#include <jni.h>
+#endif
+
 #define dbg(x) DebugLog((DebugLevel)(x),D_SDL) << __FILE__ << ":" << __LINE__ << ": "
 
 //***********************************
@@ -62,7 +75,6 @@ static unsigned long lastupdate = 0;
 static unsigned long interval = 25;
 static bool needupdate = false;
 extern bool tile_iso;
-extern WINDOW *w_hit_animation;
 
 #ifdef SDL_SOUND
 /** The music we're currently playing. */
@@ -71,11 +83,14 @@ std::string current_playlist = "";
 size_t current_playlist_at = 0;
 size_t absolute_playlist_at = 0;
 std::vector<std::size_t> playlist_indexes;
+bool sounds::sound_enabled = false;
+static bool sound_init_success = false;
 
 struct sound_effect {
     int volume;
 
     struct deleter {
+        // Operator overloaded to leverage deletion API.
         void operator()( Mix_Chunk* const c ) const {
             Mix_FreeChunk( c );
         };
@@ -104,24 +119,56 @@ std::map<std::string, music_playlist> playlists;
 std::string current_soundpack_path = "";
 #endif
 
+struct SDL_Renderer_deleter {
+    void operator()( SDL_Renderer * const renderer ) {
+        SDL_DestroyRenderer( renderer );
+    }
+};
+using SDL_Renderer_Ptr = std::unique_ptr<SDL_Renderer, SDL_Renderer_deleter>;
+struct SDL_Window_deleter {
+    void operator()( SDL_Window * const window ) {
+        SDL_DestroyWindow( window );
+    }
+};
+using SDL_Window_Ptr = std::unique_ptr<SDL_Window, SDL_Window_deleter>;
+struct SDL_PixelFormat_deleter {
+    void operator()( SDL_PixelFormat * const format ) {
+        SDL_FreeFormat( format );
+    }
+};
+using SDL_PixelFormat_Ptr = std::unique_ptr<SDL_PixelFormat, SDL_PixelFormat_deleter>;
+struct TTF_Font_deleter {
+    void operator()( TTF_Font * const font ) {
+        TTF_CloseFont( font );
+    }
+};
+using TTF_Font_Ptr = std::unique_ptr<TTF_Font, TTF_Font_deleter>;
+
 /**
  * A class that draws a single character on screen.
  */
 class Font {
 public:
-    Font(int w, int h) : fontwidth(w), fontheight(h) { }
-    virtual ~Font() { }
+    Font(int w, int h) : 
+#ifdef __ANDROID__
+    opacity(1.0f),
+#endif
+    fontwidth(w), fontheight(h) { }
+    virtual ~Font() = default;
     /**
      * Draw character t at (x,y) on the screen,
      * using (curses) color.
      */
-    virtual void OutputChar(std::string ch, int x, int y, unsigned char color) = 0;
-    virtual void draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG) const;
-    bool draw_window(WINDOW *win);
-    bool draw_window(WINDOW *win, int offsetx, int offsety);
+    virtual void OutputChar(std::string ch, int x, int y, unsigned char color, cata_cursesport::font_style FS) = 0;
+    virtual void draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG, cata_cursesport::font_style FS) const;
+    bool draw_window( const catacurses::window &win );
+    bool draw_window( const catacurses::window &win, int offsetx, int offsety );
 
-    static std::unique_ptr<Font> load_font(const std::string &typeface, int fontsize, int fontwidth, int fontheight);
+    static std::unique_ptr<Font> load_font(const std::string &typeface, int fontsize, int fontwidth, int fontheight, bool fontblending);
 public:
+#ifdef __ANDROID__
+    float opacity; // 0-1
+#endif
     // the width of the font, background is always this size
     int fontwidth;
     // the height of the font, background is always this size
@@ -133,34 +180,39 @@ public:
  */
 class CachedTTFFont : public Font {
 public:
-    CachedTTFFont(int w, int h);
-    virtual ~CachedTTFFont();
+    CachedTTFFont( int w, int h, std::string typeface, int fontsize, bool fontblending );
+    ~CachedTTFFont() override = default;
 
-    void clear();
-    void load_font(std::string typeface, int fontsize);
-    virtual void OutputChar(std::string ch, int x, int y, unsigned char color);
+    virtual void OutputChar(std::string ch, int x, int y, unsigned char color, cata_cursesport::font_style FS) override;
 protected:
-    SDL_Texture *create_glyph(const std::string &ch, int color);
+    TTF_Font *get_font(cata_cursesport::font_style FS);
+    SDL_Texture_Ptr create_glyph( const std::string &ch, int color, cata_cursesport::font_style FS );
 
-    TTF_Font* font;
+    std::map<cata_cursesport::font_style, TTF_Font_Ptr> font_map;
     // Maps (character code, color) to SDL_Texture*
 
     struct key_t {
         std::string   codepoints;
         unsigned char color;
+        cata_cursesport::font_style FS;
 
+        // Operator overload required to use in std::map.
         bool operator<(key_t const &rhs) const noexcept {
-            return (color == rhs.color) ? codepoints < rhs.codepoints : color < rhs.color;
+            return (FS.to_ulong() == rhs.FS.to_ulong()) ? ((color == rhs.color) ? codepoints < rhs.codepoints : color < rhs.color) : FS.to_ulong() < rhs.FS.to_ulong();
         }
     };
 
     struct cached_t {
-        SDL_Texture* texture;
+        SDL_Texture_Ptr texture;
         int          width;
     };
 
-    typedef std::map<key_t, cached_t> t_glyph_map;
-    t_glyph_map glyph_cache_map;
+    std::map<key_t, cached_t> glyph_cache_map;
+
+    const bool fontblending;
+    std::string typeface;
+    int fontsize;
+    int faceIndex;
 };
 
 /**
@@ -169,16 +221,14 @@ protected:
  */
 class BitmapFont : public Font {
 public:
-    BitmapFont(int w, int h);
-    virtual ~BitmapFont();
+    BitmapFont( int w, int h, const std::string &path );
+    ~BitmapFont() override = default;
 
-    void clear();
-    void load_font(const std::string &path);
-    virtual void OutputChar(std::string ch, int x, int y, unsigned char color);
+    virtual void OutputChar(std::string ch, int x, int y, unsigned char color, cata_cursesport::font_style FS) override;
     void OutputChar(long t, int x, int y, unsigned char color);
-    virtual void draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG) const;
+  virtual void draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG, cata_cursesport::font_style FS) const override;
 protected:
-    SDL_Texture *ascii[16];
+    std::array<SDL_Texture_Ptr, color_loader<SDL_Color>::COLOR_NAMES_COUNT> ascii;
     int tilewidth;
 };
 
@@ -186,76 +236,119 @@ static std::unique_ptr<Font> font;
 static std::unique_ptr<Font> map_font;
 static std::unique_ptr<Font> overmap_font;
 
-std::array<std::string, 16> main_color_names{ { "BLACK","RED","GREEN","BROWN","BLUE","MAGENTA",
-"CYAN","GRAY","DGRAY","LRED","LGREEN","YELLOW","LBLUE","LMAGENTA","LCYAN","WHITE" } };
-static std::array<SDL_Color, 256> windowsPalette;
-static SDL_Window *window = NULL;
-static SDL_Renderer* renderer = NULL;
-static SDL_PixelFormat *format;
-static SDL_Texture *display_buffer;
-int WindowWidth;        //Width of the actual window, not the curses window
-int WindowHeight;       //Height of the actual window, not the curses window
+static std::array<SDL_Color, color_loader<SDL_Color>::COLOR_NAMES_COUNT> windowsPalette;
+static SDL_Window_Ptr window;
+static SDL_Renderer_Ptr renderer;
+static SDL_PixelFormat_Ptr format;
+static SDL_Texture_Ptr display_buffer;
+#ifdef __ANDROID__
+static SDL_Texture *touch_joystick;
+#endif
+static int WindowWidth;        //Width of the actual window, not the curses window
+static int WindowHeight;       //Height of the actual window, not the curses window
 // input from various input sources. Each input source sets the type and
 // the actual input value (key pressed, mouse button clicked, ...)
 // This value is finally returned by input_manager::get_input_event.
-input_event last_input;
+static input_event last_input;
 
-int inputdelay;         //How long getch will wait for a character to be typed
-Uint32 delaydpad = std::numeric_limits<Uint32>::max();     // Used for entering diagonal directions with d-pad.
-Uint32 dpad_delay = 100;   // Delay in milli-seconds between registering a d-pad event and processing it.
-bool dpad_continuous = false;  // Whether we're currently moving continously with the dpad.
-int lastdpad = ERR;      // Keeps track of the last dpad press.
-int queued_dpad = ERR;   // Queued dpad press, for individual button presses.
-//WINDOW *_windows;  //Probably need to change this to dynamic at some point
-//int WindowCount;        //The number of curses windows currently in use
+static constexpr int ERR = -1;
+static int inputdelay;         //How long getch will wait for a character to be typed
+static Uint32 delaydpad = std::numeric_limits<Uint32>::max();     // Used for entering diagonal directions with d-pad.
+static Uint32 dpad_delay = 100;   // Delay in milliseconds between registering a d-pad event and processing it.
+static bool dpad_continuous = false;  // Whether we're currently moving continuously with the dpad.
+static int lastdpad = ERR;      // Keeps track of the last dpad press.
+static int queued_dpad = ERR;   // Queued dpad press, for individual button presses.
 int fontwidth;          //the width of the font, background is always this size
 int fontheight;         //the height of the font, background is always this size
 static int TERMINAL_WIDTH;
 static int TERMINAL_HEIGHT;
-std::map< std::string,std::vector<int> > consolecolors;
+bool fullscreen;
 
 static SDL_Joystick *joystick; // Only one joystick for now.
 
-static bool fontblending = false;
-
-// Cache of bitmap fonts family.
-// Used only while fontlist.txt is created.
-static std::set<std::string> bitmap_fonts;
-
+using cata_cursesport::curseline;
+using cata_cursesport::cursecell;
 static std::vector<curseline> oversized_framebuffer;
 static std::vector<curseline> terminal_framebuffer;
-static WINDOW *winBuffer; //tracking last drawn window to fix the framebuffer
+static std::weak_ptr<void> winBuffer; //tracking last drawn window to fix the framebuffer
 static int fontScaleBuffer; //tracking zoom levels to fix framebuffer w/tiles
-extern WINDOW *w_hit_animation; //this window overlays w_terrain which can be oversized
+extern catacurses::window w_hit_animation; //this window overlays w_terrain which can be oversized
 
-//***********************************
-//Tile-version specific functions   *
-//***********************************
-
-void init_interface()
+/**
+ * Attempt to initialize an audio device.  Returns false if initialization fails.
+ */
+static bool init_sound()
 {
-    return; // dummy function, we have nothing to do here
+#ifdef SDL_SOUND
+    int audio_rate = 44100;
+    Uint16 audio_format = AUDIO_S16;
+    int audio_channels = 2;
+    int audio_buffers = 2048;
+
+    // We should only need to init once
+    if( !sound_init_success ) {
+        // Mix_OpenAudio returns non-zero if something went wrong trying to open the device
+        if( !Mix_OpenAudio(audio_rate, audio_format, audio_channels, audio_buffers) ) {
+            Mix_AllocateChannels(128);
+            Mix_ReserveChannels(20);
+
+            // For the sound effects system.
+            Mix_GroupChannels( 2, 9, 1 );
+            Mix_GroupChannels( 0, 1, 2 );
+            Mix_GroupChannels( 11, 14, 3 );
+            Mix_GroupChannels( 15, 17, 4 );
+
+            sound_init_success = true;
+        } else {
+            dbg( D_ERROR ) << "Failed to open audio mixer, sound won't work: " << Mix_GetError();
+        }
+    }
+
+    return sound_init_success;
+#else
+    return false;
+#endif /* SDL_SOUND */
 }
+
+#ifdef SDL_SOUND
+static inline bool check_sound( const int volume = 1 )
+{
+    return( sound_init_success && sounds::sound_enabled && volume > 0 );
+}
+#endif /* SDL_SOUND */
+
 //***********************************
 //Non-curses, Window functions      *
 //***********************************
 
-void ClearScreen()
+static bool operator==( const cata_cursesport::WINDOW *const lhs, const catacurses::window &rhs )
 {
-    SDL_RenderClear(renderer);
+    return lhs == rhs.get();
 }
 
-
-bool fexists(const char *filename)
+void ClearScreen()
 {
-  std::ifstream ifile(filename);
-  return (bool)ifile;
+    SDL_RenderClear( renderer.get() );
 }
 
 bool InitSDL()
 {
     int init_flags = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER;
     int ret;
+
+#ifdef SDL_HINT_WINDOWS_DISABLE_THREAD_NAMING
+    SDL_SetHint(SDL_HINT_WINDOWS_DISABLE_THREAD_NAMING, "1");
+#endif
+
+#ifdef __linux__
+    // https://bugzilla.libsdl.org/show_bug.cgi?id=3472#c5
+    if( SDL_COMPILEDVERSION == SDL_VERSIONNUM( 2, 0, 5 ) ) {
+        const char *xmod = getenv( "XMODIFIERS" );
+        if( xmod && strstr( xmod, "@im=ibus" ) != NULL ) {
+            setenv( "XMODIFIERS", "@im=none", 1 );
+        }
+    }
+#endif
 
     ret = SDL_Init( init_flags );
     if( ret != 0 ) {
@@ -290,16 +383,16 @@ bool InitSDL()
 
 bool SetupRenderTarget()
 {
-    if( SDL_SetRenderDrawBlendMode( renderer, SDL_BLENDMODE_NONE ) != 0 ) {
+    if( SDL_SetRenderDrawBlendMode( renderer.get(), SDL_BLENDMODE_NONE ) != 0 ) {
         dbg( D_ERROR ) << "SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE) failed: " << SDL_GetError();
         // Ignored for now, rendering could still work
     }
-    display_buffer = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, WindowWidth, WindowHeight);
-    if( display_buffer == nullptr ) {
+    display_buffer.reset( SDL_CreateTexture( renderer.get(), SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, WindowWidth, WindowHeight ) );
+    if( !display_buffer ) {
         dbg( D_ERROR ) << "Failed to create window buffer: " << SDL_GetError();
         return false;
     }
-    if( SDL_SetRenderTarget( renderer, display_buffer ) != 0 ) {
+    if( SDL_SetRenderTarget( renderer.get(), display_buffer.get() ) != 0 ) {
         dbg( D_ERROR ) << "Failed to select render target: " << SDL_GetError();
         return false;
     }
@@ -316,43 +409,61 @@ bool WinCreate()
     int window_flags = 0;
     WindowWidth = TERMINAL_WIDTH * fontwidth;
     WindowHeight = TERMINAL_HEIGHT * fontheight;
+    window_flags |= SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
 
-    if( OPTIONS["SCALING_MODE"] != "none" ) {
-        window_flags |= SDL_WINDOW_RESIZABLE;
-        SDL_SetHint( SDL_HINT_RENDER_SCALE_QUALITY, OPTIONS["SCALING_MODE"].getValue().c_str() );
+    if( get_option<std::string>( "SCALING_MODE" ) != "none" ) {
+        SDL_SetHint( SDL_HINT_RENDER_SCALE_QUALITY, get_option<std::string>( "SCALING_MODE" ).c_str() );
     }
 
-    if (OPTIONS["FULLSCREEN"] == "fullscreen") {
+#ifndef __ANDROID__
+    if (get_option<std::string>( "FULLSCREEN" ) == "fullscreen") {
         window_flags |= SDL_WINDOW_FULLSCREEN;
-    } else if (OPTIONS["FULLSCREEN"] == "windowedbl") {
+    } else if (get_option<std::string>( "FULLSCREEN" ) == "windowedbl") {
         window_flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+        fullscreen = true;
         SDL_SetHint(SDL_HINT_VIDEO_MINIMIZE_ON_FOCUS_LOSS, "0");
     }
-
-    int display = OPTIONS["DISPLAY"];
+#endif
+    
+    int display = get_option<int>( "DISPLAY" );
     if ( display < 0 || display >= SDL_GetNumVideoDisplays() ) {
         display = 0;
     }
 
-    window = SDL_CreateWindow(version.c_str(),
+#ifdef __ANDROID__
+    // Bugfix for red screen on Samsung S3/Mali
+	// https://forums.libsdl.org/viewtopic.php?t=11445
+    SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 5); 
+    SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 6); 
+    SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 5); 
+
+    // Prevent mouse|touch input confusion
+    SDL_SetHint(SDL_HINT_ANDROID_SEPARATE_MOUSE_AND_TOUCH, "1");
+#endif
+
+    ::window.reset( SDL_CreateWindow( version.c_str(),
             SDL_WINDOWPOS_CENTERED_DISPLAY( display ),
             SDL_WINDOWPOS_CENTERED_DISPLAY( display ),
             WindowWidth,
             WindowHeight,
             window_flags
-        );
+        ) );
 
-    if (window == NULL) {
+    if( !::window ) {
         dbg(D_ERROR) << "SDL_CreateWindow failed: " << SDL_GetError();
         return false;
     }
+#ifndef __ANDROID__
+	// On Android SDL seems janky in windowed mode so we're fullscreen all the time.
+	// Fullscreen mode is now modified so it obeys terminal width/height, rather than
+	// overwriting it with this calculation.
     if (window_flags & SDL_WINDOW_FULLSCREEN || window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP) {
-        SDL_GetWindowSize(window, &WindowWidth, &WindowHeight);
+        SDL_GetWindowSize( ::window.get(), &WindowWidth, &WindowHeight );
         // Ignore previous values, use the whole window, but nothing more.
         TERMINAL_WIDTH = WindowWidth / fontwidth;
         TERMINAL_HEIGHT = WindowHeight / fontheight;
     }
-
+#endif
     // Initialize framebuffer caches
     terminal_framebuffer.resize(TERMINAL_HEIGHT);
     for (int i = 0; i < TERMINAL_HEIGHT; i++) {
@@ -364,38 +475,35 @@ bool WinCreate()
         oversized_framebuffer[i].chars.assign(TERMINAL_WIDTH, cursecell(""));
     }
 
-    const Uint32 wformat = SDL_GetWindowPixelFormat(window);
-    format = SDL_AllocFormat(wformat);
-    if(format == 0) {
+    const Uint32 wformat = SDL_GetWindowPixelFormat( ::window.get() );
+    format.reset( SDL_AllocFormat( wformat ) );
+    if( !format ) {
         dbg(D_ERROR) << "SDL_AllocFormat(" << wformat << ") failed: " << SDL_GetError();
         return false;
     }
 
-    bool software_renderer = OPTIONS["SOFTWARE_RENDERING"];
+    bool software_renderer = get_option<bool>( "SOFTWARE_RENDERING" );
     if( !software_renderer ) {
         dbg( D_INFO ) << "Attempting to initialize accelerated SDL renderer.";
 
-        renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_ACCELERATED |
-                                       SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE );
-        if( renderer == NULL ) {
+        renderer.reset( SDL_CreateRenderer( ::window.get(), -1, SDL_RENDERER_ACCELERATED |
+                                            SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE ) );
+        if( !renderer ) {
             dbg( D_ERROR ) << "Failed to initialize accelerated renderer, falling back to software rendering: " << SDL_GetError();
             software_renderer = true;
         } else if( !SetupRenderTarget() ) {
             dbg( D_ERROR ) << "Failed to initialize display buffer under accelerated rendering, falling back to software rendering.";
             software_renderer = true;
-            if (display_buffer != NULL) {
-                SDL_DestroyTexture(display_buffer);
-                display_buffer = NULL;
-            }
-            if( renderer != NULL ) {
-                SDL_DestroyRenderer( renderer );
-                renderer = NULL;
-            }
+            display_buffer.reset();
+            renderer.reset();
         }
     }
     if( software_renderer ) {
-        renderer = SDL_CreateRenderer( window, -1, SDL_RENDERER_SOFTWARE | SDL_RENDERER_TARGETTEXTURE );
-        if( renderer == NULL ) {
+        if( get_option<bool>( "FRAMEBUFFER_ACCEL" ) ) {
+            SDL_SetHint( SDL_HINT_FRAMEBUFFER_ACCELERATION, "1" );
+        }
+        renderer.reset( SDL_CreateRenderer( ::window.get(), -1, SDL_RENDERER_SOFTWARE | SDL_RENDERER_TARGETTEXTURE ) );
+        if( !renderer ) {
             dbg( D_ERROR ) << "Failed to initialize software renderer: " << SDL_GetError();
             return false;
         } else if( !SetupRenderTarget() ) {
@@ -404,11 +512,31 @@ bool WinCreate()
         }
     }
 
+    SDL_SetWindowMinimumSize( ::window.get(), fontwidth * 80, fontheight * 24 );
+
+#ifdef __ANDROID__
+	// TODO: Not too sure why this works to make fullscreen on Android behave. :/
+    if ( window_flags & SDL_WINDOW_FULLSCREEN || window_flags & SDL_WINDOW_FULLSCREEN_DESKTOP ) {
+        SDL_GetWindowSize( ::window.get(), &WindowWidth, &WindowHeight );
+    }
+
+    // Load virtual joystick texture
+    SDL_Surface* touch_joystick_surface = IMG_Load( "android/joystick.png" );
+    if ( !touch_joystick_surface ) {
+        throw std::runtime_error(IMG_GetError());
+    }
+    touch_joystick = SDL_CreateTextureFromSurface( renderer.get(), touch_joystick_surface );
+    if( !touch_joystick ) {
+        dbg( D_ERROR) << "failed to create texture: " << SDL_GetError();
+    }
+    SDL_FreeSurface( touch_joystick_surface );
+#endif
+
     ClearScreen();
 
     // Errors here are ignored, worst case: the option does not work as expected,
     // but that won't crash
-    if(OPTIONS["HIDE_CURSOR"] != "show" && SDL_ShowCursor(-1)) {
+    if(get_option<std::string>( "HIDE_CURSOR" ) != "show" && SDL_ShowCursor(-1)) {
         SDL_ShowCursor(SDL_DISABLE);
     } else {
         SDL_ShowCursor(SDL_ENABLE);
@@ -417,7 +545,7 @@ bool WinCreate()
     // Initialize joysticks.
     int numjoy = SDL_NumJoysticks();
 
-    if( OPTIONS["ENABLE_JOYSTICK"] && numjoy >= 1 ) {
+    if( get_option<bool>( "ENABLE_JOYSTICK" ) && numjoy >= 1 ) {
         if( numjoy > 1 ) {
             dbg( D_WARNING ) << "You have more than one gamepads/joysticks plugged in, only the first will be used.";
         }
@@ -435,24 +563,7 @@ bool WinCreate()
     }
 
     // Set up audio mixer.
-#ifdef SDL_SOUND
-    int audio_rate = 44100;
-    Uint16 audio_format = AUDIO_S16;
-    int audio_channels = 2;
-    int audio_buffers = 2048;
-
-    if(Mix_OpenAudio(audio_rate, audio_format, audio_channels, audio_buffers)) {
-        dbg( D_ERROR ) << "Failed to open audio mixer, sound won't work: " << Mix_GetError();
-    }
-    Mix_AllocateChannels(128);
-    Mix_ReserveChannels(20);
-
-    // For the sound effects system.
-    Mix_GroupChannels( 2, 9, 1 );
-    Mix_GroupChannels( 0, 1, 2 );
-    Mix_GroupChannels( 11, 14, 3 );
-    Mix_GroupChannels( 15, 17, 4 );
-#endif
+    init_sound();
 
     return true;
 }
@@ -463,39 +574,36 @@ void cleanup_sound();
 
 void WinDestroy()
 {
+#ifdef __ANDROID__
+	if ( touch_joystick ) {
+	    SDL_DestroyTexture( touch_joystick );
+		touch_joystick = NULL;
+	}
+#endif
+
 #ifdef SDL_SOUND
     // De-allocate all loaded sound.
     cleanup_sound();
     Mix_CloseAudio();
 #endif
-    clear_texture_pool();
+    tilecontext.reset();
 
     if(joystick) {
         SDL_JoystickClose(joystick);
         joystick = 0;
     }
-    if(format)
-        SDL_FreeFormat(format);
-    format = NULL;
-    if (display_buffer != NULL) {
-        SDL_DestroyTexture(display_buffer);
-        display_buffer = NULL;
-    }
-    if( renderer != NULL ) {
-        SDL_DestroyRenderer( renderer );
-        renderer = NULL;
-    }
-    if(window)
-        SDL_DestroyWindow(window);
-    window = NULL;
+    format.reset();
+    display_buffer.reset();
+    renderer.reset();
+    ::window.reset();
 }
 
 inline void FillRectDIB(SDL_Rect &rect, unsigned char color) {
-    if( SDL_SetRenderDrawColor( renderer, windowsPalette[color].r, windowsPalette[color].g,
+    if( SDL_SetRenderDrawColor( renderer.get(), windowsPalette[color].r, windowsPalette[color].g,
                                 windowsPalette[color].b, 255 ) != 0 ) {
         dbg(D_ERROR) << "SDL_SetRenderDrawColor failed: " << SDL_GetError();
     }
-    if( SDL_RenderFillRect( renderer, &rect ) != 0 ) {
+    if( SDL_RenderFillRect( renderer.get(), &rect ) != 0 ) {
         dbg(D_ERROR) << "SDL_RenderFillRect failed: " << SDL_GetError();
     }
 }
@@ -529,11 +637,12 @@ inline void FillRectDIB(int x, int y, int width, int height, unsigned char color
     FillRectDIB(rect, color);
 }
 
-
-SDL_Texture *CachedTTFFont::create_glyph(const std::string &ch, int color)
+SDL_Texture_Ptr CachedTTFFont::create_glyph( const std::string &ch, const int color, cata_cursesport::font_style FS )
 {
-    SDL_Surface * sglyph = (fontblending ? TTF_RenderUTF8_Blended : TTF_RenderUTF8_Solid)(font, ch.c_str(), windowsPalette[color]);
-    if (sglyph == NULL) {
+    const auto function = fontblending ? TTF_RenderUTF8_Blended : TTF_RenderUTF8_Solid;
+    TTF_Font *_font = get_font(FS);
+    SDL_Surface_Ptr sglyph( function( _font, ch.c_str(), windowsPalette[color] ) );
+    if( !sglyph ) {
         dbg( D_ERROR ) << "Failed to create glyph for " << ch << ": " << TTF_GetError();
         return NULL;
     }
@@ -551,15 +660,13 @@ SDL_Texture *CachedTTFFont::create_glyph(const std::string &ch, int color)
     static const Uint32 amask = 0xff000000;
 #endif
     const int wf = utf8_wrapper( ch ).display_width();
-    // Note: bits per pixel must be 8 to be synchron with the surface
+    // Note: bits per pixel must be 8 to be synchronized with the surface
     // that TTF_RenderGlyph above returns. This is important for SDL_BlitScaled
-    SDL_Surface *surface = SDL_CreateRGBSurface(0, fontwidth * wf, fontheight, 32,
-                                                rmask, gmask, bmask, amask);
-    if (surface == NULL) {
+    SDL_Surface_Ptr surface( SDL_CreateRGBSurface( 0, fontwidth * wf, fontheight, 32,
+                                                   rmask, gmask, bmask, amask ) );
+    if( !surface ) {
         dbg( D_ERROR ) << "CreateRGBSurface failed: " << SDL_GetError();
-        SDL_Texture *glyph = SDL_CreateTextureFromSurface(renderer, sglyph);
-        SDL_FreeSurface(sglyph);
-        return glyph;
+        return SDL_Texture_Ptr( SDL_CreateTextureFromSurface( renderer.get(), sglyph.get() ) );
     }
     SDL_Rect src_rect = { 0, 0, sglyph->w, sglyph->h };
     SDL_Rect dst_rect = { 0, 0, fontwidth * wf, fontheight };
@@ -578,45 +685,50 @@ SDL_Texture *CachedTTFFont::create_glyph(const std::string &ch, int color)
         src_rect.h = dst_rect.h;
     }
 
-    if (SDL_BlitSurface(sglyph, &src_rect, surface, &dst_rect) != 0) {
+    if ( SDL_BlitSurface( sglyph.get(), &src_rect, surface.get(), &dst_rect ) != 0 ) {
         dbg( D_ERROR ) << "SDL_BlitSurface failed: " << SDL_GetError();
-        SDL_FreeSurface(surface);
     } else {
-        SDL_FreeSurface(sglyph);
-        sglyph = surface;
+        sglyph = std::move( surface );
     }
 
-    SDL_Texture *glyph = SDL_CreateTextureFromSurface(renderer, sglyph);
-    SDL_FreeSurface(sglyph);
-    return glyph;
+    return SDL_Texture_Ptr( SDL_CreateTextureFromSurface( renderer.get(), sglyph.get() ) );
 }
 
-void CachedTTFFont::OutputChar(std::string ch, int const x, int const y, unsigned char const color)
+void CachedTTFFont::OutputChar(std::string ch, int const x, int const y, unsigned char const color, cata_cursesport::font_style FS)
 {
-    key_t    key {std::move(ch), static_cast<unsigned char>(color & 0xf)};
-    cached_t value;
+    key_t key {std::move(ch), static_cast<unsigned char>(color & 0xf), FS};
 
-    auto const it = glyph_cache_map.lower_bound(key);
-    if (it != std::end(glyph_cache_map) && !glyph_cache_map.key_comp()(key, it->first)) {
-        value = it->second;
-    } else {
-        value.texture = create_glyph(key.codepoints, key.color);
-        value.width = fontwidth * utf8_wrapper(key.codepoints).display_width();
-        glyph_cache_map.insert(it, std::make_pair(std::move(key), value));
+    auto it = glyph_cache_map.find( key );
+    if( it == std::end( glyph_cache_map ) ) {
+        cached_t new_entry {
+            create_glyph( key.codepoints, key.color, FS ),
+            static_cast<int>( fontwidth * utf8_wrapper( key.codepoints ).display_width() )
+        };
+        it = glyph_cache_map.insert( std::make_pair( std::move( key ), std::move( new_entry ) ) ).first;
     }
+    const cached_t &value = it->second;
 
     if (!value.texture) {
         // Nothing we can do here )-:
         return;
     }
     SDL_Rect rect {x, y, value.width, fontheight};
-    if (SDL_RenderCopy( renderer, value.texture, nullptr, &rect)) {
+#ifdef __ANDROID__
+    if (opacity != 1.0f)
+        SDL_SetTextureAlphaMod(value.texture.get(), opacity * 255.0f);
+#endif
+    if( SDL_RenderCopy( renderer.get(), value.texture.get(), nullptr, &rect ) ) {
         dbg(D_ERROR) << "SDL_RenderCopy failed: " << SDL_GetError();
     }
+#ifdef __ANDROID__
+    if (opacity != 1.0f)
+        SDL_SetTextureAlphaMod(value.texture.get(), 255);
+#endif
 }
 
-void BitmapFont::OutputChar(std::string ch, int x, int y, unsigned char color)
+void BitmapFont::OutputChar(std::string ch, int x, int y, unsigned char color, cata_cursesport::font_style FS)
 {
+    (void) FS; // unused
     int len = ch.length();
     const char *s = ch.c_str();
     const long t = UTF8_getch(&s, &len);
@@ -635,31 +747,128 @@ void BitmapFont::OutputChar(long t, int x, int y, unsigned char color)
     src.h = fontheight;
     SDL_Rect rect;
     rect.x = x; rect.y = y; rect.w = fontwidth; rect.h = fontheight;
-    if( SDL_RenderCopy( renderer, ascii[color], &src, &rect ) != 0 ) {
+#ifdef __ANDROID__
+    if (opacity != 1.0f)
+        SDL_SetTextureAlphaMod(ascii[color].get(), opacity * 255);
+#endif
+    if( SDL_RenderCopy( renderer.get(), ascii[color].get(), &src, &rect ) != 0 ) {
         dbg(D_ERROR) << "SDL_RenderCopy failed: " << SDL_GetError();
+    }
+#ifdef __ANDROID__
+    if (opacity != 1.0f)
+        SDL_SetTextureAlphaMod(ascii[color].get(), 255);
+#endif
+}
+
+#ifdef __ANDROID__
+void draw_terminal_size_preview();
+void draw_quick_shortcuts();
+void draw_virtual_joystick();
+
+static bool quick_shortcuts_enabled = true;
+
+// For previewing the terminal size with a transparent rectangle overlay when user is adjusting it in the settings
+static int preview_terminal_width = -1;
+static int preview_terminal_height = -1;
+static unsigned long preview_terminal_change_time = 0;
+
+extern "C" {
+
+static bool visible_display_frame_dirty = false;
+static bool has_visible_display_frame = false;
+static SDL_Rect visible_display_frame;
+
+JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_onNativeVisibleDisplayFrameChanged(
+                                    JNIEnv* env, jclass jcls, jint left, jint top, jint right, jint bottom)
+{
+    (void)env; // unused
+    (void)jcls; // unused
+    has_visible_display_frame = true;
+    visible_display_frame_dirty = true;
+    visible_display_frame.x = left;
+    visible_display_frame.y = top;
+    visible_display_frame.w = right - left;
+    visible_display_frame.h = bottom - top;
+}
+
+} // "C"
+
+SDL_Rect get_android_render_rect(float DisplayBufferWidth, float DisplayBufferHeight) {
+    // If the display buffer aspect ratio is wider than the display, 
+    // draw it at the top of the screen so it doesn't get covered up
+    // by the virtual keyboard. Otherwise just center it.
+    SDL_Rect dstrect;
+    float DisplayBufferAspect = DisplayBufferWidth / (float)DisplayBufferHeight;
+    float WindowHeightLessShortcuts = (float)WindowHeight;
+    if (!get_option<bool>( "ANDROID_SHORTCUT_OVERLAP" ) && quick_shortcuts_enabled)
+        WindowHeightLessShortcuts -= get_option<int>( "ANDROID_SHORTCUT_HEIGHT" );
+    float WindowAspect = WindowWidth / (float)WindowHeightLessShortcuts;
+    if (WindowAspect < DisplayBufferAspect)
+    {
+        dstrect.x = 0;
+        dstrect.y = 0;
+        dstrect.w = WindowWidth;
+        dstrect.h = WindowWidth / DisplayBufferAspect;
+    }
+    else
+    {
+        dstrect.x = 0.5f * (WindowWidth - (WindowHeightLessShortcuts * DisplayBufferAspect));
+        dstrect.y = 0;
+        dstrect.w = WindowHeightLessShortcuts * DisplayBufferAspect;
+        dstrect.h = WindowHeightLessShortcuts;
+    }
+
+    // Make sure the destination rectangle fits within the visible area
+    if (get_option<bool>("ANDROID_KEYBOARD_SCREEN_SCALE") && has_visible_display_frame) {
+        int vdf_right = visible_display_frame.x + visible_display_frame.w;
+        int vdf_bottom = visible_display_frame.y + visible_display_frame.h;
+        if (vdf_right < dstrect.x + dstrect.w)
+            dstrect.w = vdf_right - dstrect.x;
+        if (vdf_bottom < dstrect.y + dstrect.h)
+            dstrect.h = vdf_bottom - dstrect.y;
+    }
+    return dstrect;
+}
+
+#endif
+
+void refresh_display()
+{
+    needupdate = false;
+    lastupdate = SDL_GetTicks();
+
+    // Select default target (the window), copy rendered buffer
+    // there, present it, select the buffer as target again.
+    if( SDL_SetRenderTarget( renderer.get(), NULL ) != 0 ) {
+        dbg(D_ERROR) << "SDL_SetRenderTarget failed: " << SDL_GetError();
+    }
+#ifdef __ANDROID__
+    SDL_Rect dstrect = get_android_render_rect( TERMINAL_WIDTH * fontwidth, TERMINAL_HEIGHT * fontheight );
+    SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, 255);
+    SDL_RenderClear( renderer.get() );
+	if( SDL_RenderCopy( renderer.get(), display_buffer.get(), NULL, &dstrect ) != 0 ) {
+#else
+	if( SDL_RenderCopy( renderer.get(), display_buffer.get(), NULL, NULL ) != 0 ) {
+#endif
+        dbg(D_ERROR) << "SDL_RenderCopy failed: " << SDL_GetError();
+    }
+#ifdef __ANDROID__
+    draw_terminal_size_preview();
+    draw_quick_shortcuts();
+    draw_virtual_joystick();
+#endif
+    SDL_RenderPresent( renderer.get() );
+    if( SDL_SetRenderTarget( renderer.get(), display_buffer.get() ) != 0 ) {
+        dbg(D_ERROR) << "SDL_SetRenderTarget failed: " << SDL_GetError();
     }
 }
 
 // only update if the set interval has elapsed
-void try_sdl_update()
+static void try_sdl_update()
 {
     unsigned long now = SDL_GetTicks();
     if (now - lastupdate >= interval) {
-        // Select default target (the window), copy rendered buffer
-        // there, present it, select the buffer as target again.
-        if( SDL_SetRenderTarget( renderer, NULL ) != 0 ) {
-            dbg(D_ERROR) << "SDL_SetRenderTarget failed: " << SDL_GetError();
-        }
-        SDL_RenderSetLogicalSize( renderer, WindowWidth, WindowHeight );
-        if( SDL_RenderCopy( renderer, display_buffer, NULL, NULL ) != 0 ) {
-            dbg(D_ERROR) << "SDL_RenderCopy failed: " << SDL_GetError();
-        }
-        SDL_RenderPresent(renderer);
-        if( SDL_SetRenderTarget( renderer, display_buffer ) != 0 ) {
-            dbg(D_ERROR) << "SDL_SetRenderTarget failed: " << SDL_GetError();
-        }
-        needupdate = false;
-        lastupdate = now;
+        refresh_display();
     } else {
         needupdate = true;
     }
@@ -668,7 +877,7 @@ void try_sdl_update()
 //for resetting the render target after updating texture caches in cata_tiles.cpp
 void set_displaybuffer_rendertarget()
 {
-    if( SDL_SetRenderTarget( renderer, display_buffer ) != 0 ) {
+    if( SDL_SetRenderTarget( renderer.get(), display_buffer.get() ) != 0 ) {
         dbg(D_ERROR) << "SDL_SetRenderTarget failed: " << SDL_GetError();
     }
 }
@@ -682,18 +891,18 @@ void find_videodisplays() {
         displays.insert( { i, SDL_GetDisplayName( i ) } );
     }
 
-    int current_display = OPTIONS["DISPLAY"];
-
-    OPTIONS["DISPLAY"] = options_manager::cOpt("graphics", _("Display"),
-                              _("Sets which video display will be used to show the game. Requires restart."),
-                              displays, current_display, 0, options_manager::COPT_CURSES_HIDE
-                              );
+    int current_display = get_option<int>( "DISPLAY" );
+    get_options().add("DISPLAY", "graphics", _("Display"),
+                      _("Sets which video display will be used to show the game. Requires restart."),
+                      displays, current_display, 0, options_manager::COPT_CURSES_HIDE
+                      );
 }
 
 // line_id is one of the LINE_*_C constants
 // FG is a curses color
-void Font::draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG) const
+void Font::draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG, cata_cursesport::font_style FS) const
 {
+    (void) FS; // unused
     switch (line_id) {
         case LINE_OXOX_C://box bottom/top side (horizontal line)
             HorzLineDIB(drawx, drawy + (fontheight / 2), drawx + fontwidth, 1, FG);
@@ -777,7 +986,7 @@ void reinitialize_framebuffer()
     }
 }
 
-void invalidate_framebuffer_proportion( WINDOW* win )
+void invalidate_framebuffer_proportion( cata_cursesport::WINDOW* win )
 {
     const int oversized_width = std::max( TERMX, std::max( OVERMAP_WINDOW_WIDTH, TERRAIN_WINDOW_WIDTH ) );
     const int oversized_height = std::max( TERMY, std::max( OVERMAP_WINDOW_HEIGHT, TERRAIN_WINDOW_HEIGHT ) );
@@ -821,7 +1030,7 @@ void invalidate_framebuffer_proportion( WINDOW* win )
 }
 
 // clear the framebuffer when werase is called on certain windows that don't use the main terminal font
-void handle_additional_window_clear( WINDOW* win )
+void cata_cursesport::handle_additional_window_clear( WINDOW* win )
 {
     if ( !g ) {
         return;
@@ -831,16 +1040,21 @@ void handle_additional_window_clear( WINDOW* win )
     }
 }
 
-void clear_window_area(WINDOW* win)
+void clear_window_area( const catacurses::window &win_ )
 {
+    cata_cursesport::WINDOW *const win = win_.get<cata_cursesport::WINDOW>();
     FillRectDIB(win->x * fontwidth, win->y * fontheight,
-                win->width * fontwidth, win->height * fontheight, COLOR_BLACK);
+                win->width * fontwidth, win->height * fontheight, catacurses::black);
 }
 
-void curses_drawwindow(WINDOW *win)
+void cata_cursesport::curses_drawwindow( const catacurses::window &w )
 {
+    WINDOW *const win = w.get<WINDOW>();
     bool update = false;
-    if (g && win == g->w_terrain && use_tiles) {
+    if (g && w == g->w_terrain && use_tiles) {
+        // Strings with colors do be drawn with map_font on top of tiles.
+        std::multimap<point, formatted_text> overlay_strings;
+
         // game::w_terrain can be drawn by the tilecontext.
         // skip the normal drawing code for it.
         tilecontext->draw(
@@ -848,12 +1062,64 @@ void curses_drawwindow(WINDOW *win)
             win->y * fontheight,
             tripoint( g->ter_view_x, g->ter_view_y, g->ter_view_z ),
             TERRAIN_WINDOW_TERM_WIDTH * font->fontwidth,
-            TERRAIN_WINDOW_TERM_HEIGHT * font->fontheight);
+            TERRAIN_WINDOW_TERM_HEIGHT * font->fontheight,
+            overlay_strings );
+
+        point prev_coord;
+        int x_offset = 0;
+        int alignment_offset = 0;
+        for( const auto &iter : overlay_strings ) {
+            const point coord = iter.first;
+            const formatted_text ft = iter.second;
+            const utf8_wrapper text( ft.text );
+
+            // Strings at equal coords are displayed sequentially.
+            if( coord != prev_coord ) {
+                x_offset = 0;
+            }
+
+            // Calculate length of all strings in sequence to align them.
+            if ( x_offset == 0 ) {
+                int full_text_length = 0;
+                const auto range = overlay_strings.equal_range( coord );
+                for( auto ri = range.first; ri != range.second; ++ri ) {
+                    utf8_wrapper rt(ri->second.text);
+                    full_text_length += rt.display_width();
+                }
+
+                alignment_offset = 0;
+                if( ft.alignment == TEXT_ALIGNMENT_CENTER ) {
+                    alignment_offset = full_text_length / 2;
+                }
+                else if( ft.alignment == TEXT_ALIGNMENT_RIGHT ) {
+                    alignment_offset = full_text_length - 1;
+                }
+            }
+
+            for( size_t i = 0; i < text.display_width(); ++i ) {
+                const int x0 = win->x * fontwidth;
+                const int y0 = win->y * fontheight;
+                const int x = x0 + ( x_offset - alignment_offset + i ) * map_font->fontwidth + coord.x;
+                const int y = y0 + coord.y;                
+
+                // Clip to window bounds.
+                if( x < x0 || x > x0 + ( TERRAIN_WINDOW_TERM_WIDTH - 1 ) * font->fontwidth
+                    || y < y0 || y > y0 + ( TERRAIN_WINDOW_TERM_HEIGHT - 1 ) * font->fontheight ) {
+                    continue;
+                }
+
+                // TODO: draw with outline / BG color for better readability
+                map_font->OutputChar( text.substr_display( i, 1 ).str(), x, y, ft.color, win->FS );
+            }
+
+            prev_coord = coord;
+            x_offset = text.display_width();
+        }
 
         invalidate_framebuffer(terminal_framebuffer, win->x, win->y, TERRAIN_WINDOW_TERM_WIDTH, TERRAIN_WINDOW_TERM_HEIGHT);
 
         update = true;
-    } else if (g && win == g->w_terrain && map_font ) {
+    } else if (g && w == g->w_terrain && map_font ) {
         // When the terrain updates, predraw a black space around its edge
         // to keep various former interface elements from showing through the gaps
         // TODO: Maybe track down screen changes and use g->w_blackspace to draw this instead
@@ -865,37 +1131,37 @@ void curses_drawwindow(WINDOW *win)
         if( partial_height > 0 ) {
             FillRectDIB( win->x * map_font->fontwidth,
                          ( win->y + TERRAIN_WINDOW_HEIGHT ) * map_font->fontheight,
-                         TERRAIN_WINDOW_WIDTH * map_font->fontwidth + partial_width, partial_height, COLOR_BLACK );
+                         TERRAIN_WINDOW_WIDTH * map_font->fontwidth + partial_width, partial_height, catacurses::black );
         }
         //Gap between terrain and sidebar
         if( partial_width > 0 ) {
             FillRectDIB( ( win->x + TERRAIN_WINDOW_WIDTH ) * map_font->fontwidth, win->y * map_font->fontheight,
-                         partial_width, TERRAIN_WINDOW_HEIGHT * map_font->fontheight + partial_height, COLOR_BLACK );
+                         partial_width, TERRAIN_WINDOW_HEIGHT * map_font->fontheight + partial_height, catacurses::black );
         }
         // Special font for the terrain window
-        update = map_font->draw_window(win);
-    } else if (g && win == g->w_overmap && overmap_font ) {
+        update = map_font->draw_window( w );
+    } else if (g && w == g->w_overmap && overmap_font ) {
         // Special font for the terrain window
-        update = overmap_font->draw_window(win);
-    } else if (win == w_hit_animation && map_font ) {
+        update = overmap_font->draw_window( w );
+    } else if (w == w_hit_animation && map_font ) {
         // The animation window overlays the terrain window,
         // it uses the same font, but it's only 1 square in size.
         // The offset must not use the global font, but the map font
         int offsetx = win->x * map_font->fontwidth;
         int offsety = win->y * map_font->fontheight;
-        update = map_font->draw_window(win, offsetx, offsety);
-    } else if (g && win == g->w_blackspace) {
+        update = map_font->draw_window( w, offsetx, offsety );
+    } else if (g && w == g->w_blackspace) {
         // fill-in black space window skips draw code
         // so as not to confuse framebuffer any more than necessary
         int offsetx = win->x * font->fontwidth;
         int offsety = win->y * font->fontheight;
         int wwidth = win->width * font->fontwidth;
         int wheight = win->height * font->fontheight;
-        FillRectDIB(offsetx, offsety, wwidth, wheight, COLOR_BLACK);
+        FillRectDIB( offsetx, offsety, wwidth, wheight, catacurses::black );
         update = true;
-    } else if (g && win == g->w_pixel_minimap && g->pixel_minimap_option) {
+    } else if (g && w == g->w_pixel_minimap && g->pixel_minimap_option) {
         // Make sure the entire minimap window is black before drawing.
-        clear_window_area(win);
+        clear_window_area( w );
         tilecontext->draw_minimap(
             win->x * fontwidth, win->y * fontheight,
             tripoint( g->u.pos().x, g->u.pos().y, g->ter_view_z ),
@@ -903,26 +1169,26 @@ void curses_drawwindow(WINDOW *win)
         update = true;
     } else {
         // Either not using tiles (tilecontext) or not the w_terrain window.
-        update = font->draw_window(win);
+        update = font->draw_window( w );
     }
     if(update) {
         needupdate = true;
     }
 }
 
-bool Font::draw_window(WINDOW *win)
+bool Font::draw_window( const catacurses::window &win )
 {
+    cata_cursesport::WINDOW *const w = win.get<cata_cursesport::WINDOW>();
     // Use global font sizes here to make this independent of the
     // font used for this window.
-    return draw_window(win, win->x * ::fontwidth, win->y * ::fontheight);
+    return draw_window( win, w->x * ::fontwidth, w->y * ::fontheight );
 }
 
-bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
+bool Font::draw_window( const catacurses::window &w, const int offsetx, const int offsety )
 {
+    cata_cursesport::WINDOW *const win = w.get<cata_cursesport::WINDOW>();
     //Keeping track of the last drawn window
-    if( winBuffer == NULL ) {
-            winBuffer = win;
-    }
+    const cata_cursesport::WINDOW *winBuffer = static_cast<cata_cursesport::WINDOW*>( ::winBuffer.lock().get() );
     if( !fontScaleBuffer ) {
             fontScaleBuffer = tilecontext->get_tile_width();
     }
@@ -936,8 +1202,8 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
     invalidate_framebuffer_proportion( win );
 
     // use the oversize buffer when dealing with windows that can have a different font than the main text font
-    bool use_oversized_framebuffer = g && ( win == g->w_terrain || win == g->w_overmap ||
-                                            ( win != nullptr && win == w_hit_animation ) );
+    bool use_oversized_framebuffer = g && ( w == g->w_terrain || w == g->w_overmap ||
+                                            w == w_hit_animation );
 
     /*
     Let's try to keep track of different windows.
@@ -951,14 +1217,14 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
 
     Everything else works on strict equality because there aren't yet IDs for some of them.
     */
-    if( g && ( win == g->w_terrain || win == g->w_minimap || win == g->w_HP || win == g->w_status ||
-         win == g->w_status2 || win == g->w_messages || win == g->w_location ) ) {
+    if( g && ( w == g->w_terrain || w == g->w_minimap || w == g->w_HP || w == g->w_status ||
+         w == g->w_status2 || w == g->w_messages || w == g->w_location ) ) {
         if ( winBuffer == g->w_terrain || winBuffer == g->w_minimap ||
              winBuffer == g->w_HP || winBuffer == g->w_status || winBuffer == g->w_status2 ||
              winBuffer == g->w_messages || winBuffer == g->w_location ) {
             oldWinCompatible = true;
         }
-    }else if( g && ( win == g->w_overmap || win == g->w_omlegend ) ) {
+    }else if( g && ( w == g->w_overmap || w == g->w_omlegend ) ) {
         if ( winBuffer == g->w_overmap || winBuffer == g->w_omlegend ) {
             oldWinCompatible = true;
         }
@@ -967,6 +1233,9 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
             oldWinCompatible = true;
         }
     }
+
+    // @todo: Get this from UTF system to make sure it is exactly the kind of space we need
+    static const std::string space_string = " ";
 
     bool update = false;
     for( int j = 0; j < win->height; j++ ) {
@@ -993,6 +1262,11 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
             std::vector<curseline> &framebuffer = use_oversized_framebuffer ? oversized_framebuffer :
                                              terminal_framebuffer;
 
+#ifdef __ANDROID__
+			// BUGFIX: Prevents an occasional crash when viewing player info. This seems like it might be a cross-platform issue in the experimental build
+            if (fby >= (int)framebuffer.size() || fbx >= (int)framebuffer[fby].chars.size())
+                continue;
+#endif
             cursecell &oldcell = framebuffer[fby].chars[fbx];
 
             if (oldWinCompatible && cell == oldcell && fontScale == fontScaleBuffer) {
@@ -1003,11 +1277,18 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
             if( cell.ch.empty() ) {
                 continue; // second cell of a multi-cell character
             }
+
+            // Spaces are used a lot, so this does help noticeably
+            if( cell.ch == space_string ) {
+                FillRectDIB( drawx, drawy, fontwidth, fontheight, cell.BG );
+                continue;
+            }
             const char *utf8str = cell.ch.c_str();
             int len = cell.ch.length();
             const int codepoint = UTF8_getch( &utf8str, &len );
-            const int FG = cell.FG;
-            const int BG = cell.BG;
+            const catacurses::base_color FG = cell.FG;
+            const catacurses::base_color BG = cell.BG;
+            const cata_cursesport::font_style FS = cell.FS;
             if( codepoint != UNKNOWN_UNICODE ) {
                 const int cw = utf8_width( cell.ch );
                 if( cw < 1 ) {
@@ -1015,17 +1296,17 @@ bool Font::draw_window( WINDOW *win, int offsetx, int offsety )
                     continue;
                 }
                 FillRectDIB( drawx, drawy, fontwidth * cw, fontheight, BG );
-                OutputChar( cell.ch, drawx, drawy, FG );
+                OutputChar( cell.ch, drawx, drawy, FG, FS );
             } else {
                 FillRectDIB( drawx, drawy, fontwidth, fontheight, BG );
-                draw_ascii_lines( static_cast<unsigned char>( cell.ch[0] ), drawx, drawy, FG );
+                draw_ascii_lines( static_cast<unsigned char>( cell.ch[0] ), drawx, drawy, FG, FS );
             }
 
         }
     }
     win->draw = false; //We drew the window, mark it as so
     //Keeping track of last drawn window and tilemode zoom level
-    winBuffer = win;
+    ::winBuffer = w.weak_ptr();
     fontScaleBuffer = tilecontext->get_tile_width();
 
     return update;
@@ -1102,7 +1383,7 @@ int HandleDPad()
                 lastdpad = lc;
                 queued_dpad = ERR;
 
-                if(dpad_continuous == false) {
+                if( !dpad_continuous ) {
                     delaydpad = SDL_GetTicks() + 200;
                     dpad_continuous = true;
                 } else {
@@ -1132,12 +1413,42 @@ int HandleDPad()
  * allows the input_manager to only consider those.
  * @return 0 if the input can not be translated (unknown key?),
  * -1 when a ALT+number sequence has been started,
- * or somthing that a call to ncurses getch would return.
+ * or something that a call to ncurses getch would return.
  */
-long sdl_keysym_to_curses(SDL_Keysym keysym)
+long sdl_keysym_to_curses( SDL_Keysym keysym )
 {
+
+    if( get_option<bool>( "DIAG_MOVE_WITH_MODIFIERS" ) ) {
+        //Shift + Cursor Arrow (diagonal clockwise)
+        if( keysym.mod & KMOD_SHIFT ) {
+            switch( keysym.sym ) {
+                case SDLK_LEFT:
+                    return inp_mngr.get_first_char_for_action( "LEFTUP" );
+                case SDLK_RIGHT:
+                    return inp_mngr.get_first_char_for_action( "RIGHTDOWN" );
+                case SDLK_UP:
+                    return inp_mngr.get_first_char_for_action( "RIGHTUP" );
+                case SDLK_DOWN:
+                    return inp_mngr.get_first_char_for_action( "LEFTDOWN" );
+            }
+        }
+        //Ctrl + Cursor Arrow (diagonal counter-clockwise)
+        if( keysym.mod & KMOD_CTRL ) {
+            switch( keysym.sym ) {
+                case SDLK_LEFT:
+                    return inp_mngr.get_first_char_for_action( "LEFTDOWN" );
+                case SDLK_RIGHT:
+                    return inp_mngr.get_first_char_for_action( "RIGHTUP" );
+                case SDLK_UP:
+                    return inp_mngr.get_first_char_for_action( "LEFTUP" );
+                case SDLK_DOWN:
+                    return inp_mngr.get_first_char_for_action( "RIGHTDOWN" );
+            }
+        }
+    }
+
     switch (keysym.sym) {
-        // This is special: allow entering a unicode character with ALT+number
+        // This is special: allow entering a Unicode character with ALT+number
         case SDLK_RALT:
         case SDLK_LALT:
             begin_alt_code();
@@ -1155,7 +1466,7 @@ long sdl_keysym_to_curses(SDL_Keysym keysym)
         case SDLK_ESCAPE:
             return KEY_ESCAPE;
         case SDLK_TAB:
-            if (keysym.mod & KMOD_SHIFT) {
+            if( keysym.mod & KMOD_SHIFT ) {
                 return KEY_BTAB;
             }
             return '\t';
@@ -1175,21 +1486,36 @@ long sdl_keysym_to_curses(SDL_Keysym keysym)
             return KEY_HOME;
         case SDLK_END:
             return KEY_END;
-        case SDLK_F1: return KEY_F(1);
-        case SDLK_F2: return KEY_F(2);
-        case SDLK_F3: return KEY_F(3);
-        case SDLK_F4: return KEY_F(4);
-        case SDLK_F5: return KEY_F(5);
-        case SDLK_F6: return KEY_F(6);
-        case SDLK_F7: return KEY_F(7);
-        case SDLK_F8: return KEY_F(8);
-        case SDLK_F9: return KEY_F(9);
-        case SDLK_F10: return KEY_F(10);
-        case SDLK_F11: return KEY_F(11);
-        case SDLK_F12: return KEY_F(12);
-        case SDLK_F13: return KEY_F(13);
-        case SDLK_F14: return KEY_F(14);
-        case SDLK_F15: return KEY_F(15);
+        case SDLK_F1:
+            return KEY_F( 1 );
+        case SDLK_F2:
+            return KEY_F( 2 );
+        case SDLK_F3:
+            return KEY_F( 3 );
+        case SDLK_F4:
+            return KEY_F( 4 );
+        case SDLK_F5:
+            return KEY_F( 5 );
+        case SDLK_F6:
+            return KEY_F( 6 );
+        case SDLK_F7:
+            return KEY_F( 7 );
+        case SDLK_F8:
+            return KEY_F( 8 );
+        case SDLK_F9:
+            return KEY_F( 9 );
+        case SDLK_F10:
+            return KEY_F( 10 );
+        case SDLK_F11:
+            return KEY_F( 11 );
+        case SDLK_F12:
+            return KEY_F( 12 );
+        case SDLK_F13:
+            return KEY_F( 13 );
+        case SDLK_F14:
+            return KEY_F( 14 );
+        case SDLK_F15:
+            return KEY_F( 15 );
         // Every other key is ignored as there is no curses constant for it.
         // TODO: add more if you find more.
         default:
@@ -1197,24 +1523,1002 @@ long sdl_keysym_to_curses(SDL_Keysym keysym)
     }
 }
 
+bool handle_resize(int w, int h)
+{
+    if( ( w != WindowWidth ) || ( h != WindowHeight ) ) {
+        WindowWidth = w;
+        WindowHeight = h;
+        TERMINAL_WIDTH = WindowWidth / fontwidth;
+        TERMINAL_HEIGHT = WindowHeight / fontheight;
+        SetupRenderTarget();
+        game_ui::init_ui();
+        tilecontext->reinit_minimap();
+
+        return true;
+    }
+    return false;
+}
+
+void toggle_fullscreen_window()
+{
+    static int restore_win_w = get_option<int>( "TERMINAL_X" ) * fontwidth;
+    static int restore_win_h = get_option<int>( "TERMINAL_Y" ) * fontheight;
+
+    if ( fullscreen ) {
+        if( SDL_SetWindowFullscreen( window.get(), 0 ) != 0 ) {
+            dbg(D_ERROR) << "SDL_SetWinodwFullscreen failed: " << SDL_GetError();
+            return;
+        }
+        SDL_RestoreWindow( window.get() );
+        SDL_SetWindowSize( window.get(), restore_win_w, restore_win_h );
+        SDL_SetWindowMinimumSize( window.get(), fontwidth * 80, fontheight * 24 );
+    } else {
+        restore_win_w = WindowWidth;
+        restore_win_h = WindowHeight;
+        if( SDL_SetWindowFullscreen( window.get(), SDL_WINDOW_FULLSCREEN_DESKTOP ) != 0 ) {
+            dbg(D_ERROR) << "SDL_SetWinodwFullscreen failed: " << SDL_GetError();
+            return;
+        }
+    }
+    int nw = 0;
+    int nh = 0;
+    SDL_GetWindowSize( window.get(), &nw, &nh );
+    handle_resize( nw, nh );
+    fullscreen = !fullscreen;
+}
+
+#ifdef __ANDROID__
+static float finger_down_x = -1.0f; // in pixels
+static float finger_down_y = -1.0f; // in pixels
+static float finger_curr_x = -1.0f; // in pixels
+static float finger_curr_y = -1.0f; // in pixels
+static float second_finger_down_x = -1.0f; // in pixels
+static float second_finger_down_y = -1.0f; // in pixels
+static float second_finger_curr_x = -1.0f; // in pixels
+static float second_finger_curr_y = -1.0f; // in pixels
+static unsigned long finger_down_time = 0; // when did the first finger start touching the screen? 0 if not touching, otherwise the time in milliseconds.
+static unsigned long finger_repeat_time = 0; // the last time we repeated input for a finger hold, 0 if not touching, otherwise the time in milliseconds.
+static unsigned long last_tap_time = 0; // the last time a single tap was detected. used for double-tap detection.
+static unsigned long ac_back_down_time = 0; // when did the hardware back button start being pressed? 0 if not touching, otherwise the time in milliseconds.
+static bool is_two_finger_touch = false; // has a second finger touched the screen while the first was touching?
+static bool is_quick_shortcut_touch = false; // did this touch start on a quick shortcut?
+static bool quick_shortcuts_toggle_handled = false;
+unsigned long finger_repeat_delay = 500; // the current finger repeat delay - will be somewhere between the min/max values depending on user input
+static bool needs_sdl_surface_visibility_refresh = true; // should we make sure the sdl surface is visible? set to true whenever the SDL window is shown.
+
+// Quick shortcuts container: maps the touch input context category (std::string) to a std::list of input_events.
+typedef std::list<input_event> quick_shortcuts_t;
+std::map<std::string, quick_shortcuts_t> quick_shortcuts_map;
+
+// A copy of the last known input_context from the input manager. It's important this is a copy, as there are times
+// the input manager has an empty input_context (eg. when player is moving over slow objects) and we don't want our
+// quick shortcuts to disappear momentarily.
+input_context touch_input_context;
+
+std::string get_quick_shortcut_name(const std::string& category) {
+    if( category == "DEFAULTMODE" && g->check_zone( zone_type_id("NO_AUTO_PICKUP"), g->u.pos() ) && get_option<bool>("ANDROID_SHORTCUT_ZONE"))
+        return "DEFAULTMODE____SHORTCUTS";
+    return category;
+}
+
+// given the active quick shortcuts, returns the dimensions of each quick shortcut button.
+void get_quick_shortcut_dimensions(quick_shortcuts_t& qsl, float& border, float& width, float& height) {
+    border = std::floor(get_option<int>( "ANDROID_SHORTCUT_BORDER" ));
+    width = get_option<int>( "ANDROID_SHORTCUT_WIDTH_MAX" );
+    float min_width = std::min(get_option<int>( "ANDROID_SHORTCUT_WIDTH_MIN" ), get_option<int>( "ANDROID_SHORTCUT_WIDTH_MAX" ));
+    float usable_window_width = WindowWidth * get_option<int>("ANDROID_SHORTCUT_SCREEN_PERCENTAGE") * 0.01f;
+    if (width * qsl.size() > usable_window_width) {
+        width *= usable_window_width / (width * qsl.size());
+        if (width < min_width)
+            width = min_width;
+    }
+    width = std::floor(width);
+    height = std::floor(get_option<int>( "ANDROID_SHORTCUT_HEIGHT" ));
+}
+
+// Returns the quick shortcut (if any) under the finger's current position, or finger down position if down == true
+input_event* get_quick_shortcut_under_finger(bool down = false) {
+
+    if (!quick_shortcuts_enabled)
+        return NULL;
+
+    quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(touch_input_context.get_category())];
+
+    float border, width, height;
+    get_quick_shortcut_dimensions(qsl, border, width, height);
+
+    float finger_y = down ? finger_down_y : finger_curr_y;
+    if (finger_y < WindowHeight - height)
+        return NULL;
+
+    int i = 0;
+    bool shortcut_right = get_option<std::string>( "ANDROID_SHORTCUT_POSITION" ) == "right";
+    float finger_x = down ? finger_down_x : finger_curr_x;
+    for (std::list<input_event>::iterator it = qsl.begin(); it != qsl.end(); ++it) {
+        if ((i+1) * width > WindowWidth * get_option<int>("ANDROID_SHORTCUT_SCREEN_PERCENTAGE") * 0.01f)
+            continue;
+        i++;
+        if (shortcut_right) {
+            if (finger_x > WindowWidth - (i * width))
+                return &(*it);
+        }
+        else {
+        if (finger_x < i * width)
+            return &(*it);
+        }
+    }
+
+    return NULL;
+}
+
+// when pre-populating a quick shortcut list with defaults, ignore these actions (since they're all handleable by native touch operations)
+bool ignore_action_for_quick_shortcuts(const std::string& action) {
+   return (action == "UP"
+        || action == "DOWN"
+        || action == "LEFT"
+        || action == "RIGHT"
+        || action == "LEFTUP"
+        || action == "LEFTDOWN"
+        || action == "RIGHTUP"
+        || action == "RIGHTDOWN"
+        || action == "QUIT"
+        || action == "CONFIRM"
+        || action == "MOVE_SINGLE_ITEM" // maps to ENTER
+        || action == "MOVE_ARMOR" // maps to ENTER
+        || action == "ANY_INPUT"
+        || action == "DELETE_TEMPLATE" // strictly we shouldn't have this one, but I don't like seeing the "d" on the main menu by default. :)
+        );
+}
+
+// Adds a quick shortcut to a quick_shortcut list, setting shortcut_last_used_action_counter accordingly.
+void add_quick_shortcut(quick_shortcuts_t& qsl, input_event& event, bool back, bool reset_shortcut_last_used_action_counter) {
+    if (reset_shortcut_last_used_action_counter)
+        event.shortcut_last_used_action_counter = g->get_user_action_counter(); // only used for DEFAULTMODE
+    if (back)
+        qsl.push_back(event);
+    else
+        qsl.push_front(event);
+}
+
+// Given a quick shortcut list and a specific key, move that key to the front or back of the list.
+void reorder_quick_shortcut(quick_shortcuts_t& qsl, long key, bool back) {
+        for(const auto& event : qsl) {
+            if (event.get_first_input() == key) {
+                input_event event_copy = event;
+                qsl.remove(event);
+                add_quick_shortcut(qsl, event_copy, back, false);
+                break;
+            }
+        }
+}
+
+void reorder_quick_shortcuts(quick_shortcuts_t& qsl) {
+        // Do some manual reordering to make transitions between input contexts more consistent
+        // Desired order of keys: < > BACKTAB TAB PPAGE NPAGE . . . . ?
+        bool shortcut_right = get_option<std::string>( "ANDROID_SHORTCUT_POSITION" ) == "right";
+        if (shortcut_right) {
+            reorder_quick_shortcut(qsl, KEY_PPAGE, false); // paging control
+            reorder_quick_shortcut(qsl, KEY_NPAGE, false);
+            reorder_quick_shortcut(qsl, KEY_BTAB, false); // secondary tabs after that
+            reorder_quick_shortcut(qsl, '\t', false);
+            reorder_quick_shortcut(qsl, '<', false); // tabs next
+            reorder_quick_shortcut(qsl, '>', false);
+            reorder_quick_shortcut(qsl, '?', false); // help at the start
+        }
+        else {
+            reorder_quick_shortcut(qsl, KEY_NPAGE, false);
+            reorder_quick_shortcut(qsl, KEY_PPAGE, false); // paging control
+            reorder_quick_shortcut(qsl, '\t', false);
+            reorder_quick_shortcut(qsl, KEY_BTAB, false); // secondary tabs after that
+            reorder_quick_shortcut(qsl, '>', false);
+            reorder_quick_shortcut(qsl, '<', false); // tabs next
+            reorder_quick_shortcut(qsl, '?', false); // help at the start
+        }
+}
+
+long choose_best_key_for_action(const std::string& action, const std::string& category) {
+    const std::vector<input_event>& events = inp_mngr.get_input_for_action( action, category );
+    long best_key = -1;
+    for( const auto &events_event : events ) {
+        if( events_event.type == CATA_INPUT_KEYBOARD && events_event.sequence.size() == 1 ) {
+            bool is_ascii_char = isprint( events_event.sequence.front() ) && events_event.sequence.front() < 0xFF;
+            bool is_best_ascii_char = best_key >= 0 && isprint( best_key ) && best_key < 0xFF;
+            if ( best_key < 0 || (is_ascii_char && !is_best_ascii_char) ) {
+                best_key = events_event.sequence.front();
+            }
+        }
+    }
+    return best_key;
+}
+
+bool add_key_to_quick_shortcuts(long key, const std::string& category, bool back) {
+    if (key > 0) {
+        quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(category)];
+        input_event event = input_event(key, CATA_INPUT_KEYBOARD);
+        quick_shortcuts_t::iterator it = std::find(qsl.begin(), qsl.end(), event);
+        if (it != qsl.end()) { // already exists
+            (*it).shortcut_last_used_action_counter = g->get_user_action_counter(); // make sure we refresh shortcut usage
+        }
+        else {
+            add_quick_shortcut(qsl, event, back, true); // doesn't exist, add it to the shortcuts and refresh shortcut usage
+            return true;
+        }
+    }
+    return false;
+}
+bool add_best_key_for_action_to_quick_shortcuts(std::string action_str, const std::string& category, bool back) {
+    long best_key = choose_best_key_for_action(action_str, category);
+    return add_key_to_quick_shortcuts(best_key, category, back);
+}
+
+bool add_best_key_for_action_to_quick_shortcuts(action_id action, const std::string& category, bool back) {
+    return add_best_key_for_action_to_quick_shortcuts(action_ident(action), category, back);
+}
+
+void remove_action_from_quick_shortcuts(std::string action_str, const std::string& category) {
+    quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(category)];
+    const std::vector<input_event>& events = inp_mngr.get_input_for_action( action_str, category );
+    for (const auto& event : events)
+        qsl.remove(event);
+}
+
+void remove_action_from_quick_shortcuts(action_id action, const std::string& category) {
+    remove_action_from_quick_shortcuts(action_ident(action), category);
+}
+
+// Returns true if an expired action was removed
+bool remove_expired_actions_from_quick_shortcuts(const std::string& category) {
+    int remove_turns = get_option<int>("ANDROID_SHORTCUT_REMOVE_TURNS");
+    if (remove_turns <= 0)
+        return false;
+
+    // This should only ever be used on "DEFAULTMODE" category for gameplay shortcuts
+    if (category != "DEFAULTMODE")
+        return false;
+
+	bool ret = false;
+    quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(category)];
+    quick_shortcuts_t::iterator it = qsl.begin();
+    while (it != qsl.end()) {
+        if (g->get_user_action_counter() - (*it).shortcut_last_used_action_counter > remove_turns) {
+            it = qsl.erase(it);
+			ret = true;
+		}
+        else {
+            ++it;
+		}
+    }
+	return ret;
+}
+
+void remove_stale_inventory_quick_shortcuts() {
+    if (get_option<bool>("ANDROID_INVENTORY_AUTOADD")) {
+        quick_shortcuts_t& qsl = quick_shortcuts_map["INVENTORY"];
+        quick_shortcuts_t::iterator it = qsl.begin();
+        bool in_inventory;
+        long key;
+        bool valid;
+        while (it != qsl.end()) {
+            key = (*it).get_first_input();
+            valid = inv_chars.valid(key);
+            in_inventory = false;
+            if (valid) {
+                in_inventory = g->u.inv.invlet_to_position(key) != INT_MIN;
+                if (!in_inventory) {
+                    // We couldn't find this item in the inventory, let's check worn items
+                    for (const auto& item : g->u.worn) {
+                        if (item.invlet == key) {
+                            in_inventory = true;
+                            break;
+                        }
+                    }
+                }
+                if (!in_inventory) {
+                    // We couldn't find it in worn items either, check weapon held
+                    if (g->u.weapon.invlet == key)
+                        in_inventory = true;
+                }
+            }
+            if (valid && !in_inventory) {
+                it = qsl.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+    }    
+}
+
+// Draw preview of terminal size when adjusting values
+void draw_terminal_size_preview()
+{
+    bool preview_terminal_dirty = preview_terminal_width != get_option<int>("TERMINAL_X") * fontwidth ||
+        preview_terminal_height != get_option<int>("TERMINAL_Y") * fontheight;
+    if (preview_terminal_dirty ||
+        (preview_terminal_change_time > 0 && SDL_GetTicks() - preview_terminal_change_time < 1000))
+    {
+        if (preview_terminal_dirty)
+        {
+            preview_terminal_width = get_option<int>("TERMINAL_X") * fontwidth;
+            preview_terminal_height = get_option<int>("TERMINAL_Y") * fontheight;
+            preview_terminal_change_time = SDL_GetTicks();
+        }
+        SDL_SetRenderDrawColor(renderer.get(), 255, 255, 255, 255);
+        SDL_Rect previewrect = get_android_render_rect(preview_terminal_width, preview_terminal_height);
+        SDL_RenderDrawRect(renderer.get(), &previewrect);
+        SDL_SetRenderDrawColor(renderer.get(), 0, 0, 0, 255);
+    }
+}
+
+// Draw quick shortcuts on top of the game view
+void draw_quick_shortcuts() {
+
+    if (!quick_shortcuts_enabled || 
+        SDL_IsTextInputActive() ||
+        (get_option<bool>("ANDROID_HIDE_HOLDS") && !is_quick_shortcut_touch && finger_down_time > 0 && SDL_GetTicks() - finger_down_time >= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY"))) // player is swipe + holding in a direction
+        return;
+
+    bool shortcut_right = get_option<std::string>( "ANDROID_SHORTCUT_POSITION" ) == "right";
+    std::string& category = touch_input_context.get_category();
+    bool is_default_mode = category == "DEFAULTMODE";
+    quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(category)];
+    if (qsl.size() == 0 || touch_input_context.get_registered_manual_keys().size() > 0) {
+        if (category == "DEFAULTMODE") {
+            const std::string default_gameplay_shortcuts = get_option<std::string>("ANDROID_SHORTCUT_DEFAULTS");
+            for (const auto& c : default_gameplay_shortcuts)
+                add_key_to_quick_shortcuts(c, category, true);
+        }
+        else {
+            // This is an empty quick-shortcuts list, let's pre-populate it as best we can from the input context
+            
+            // For manual key lists, force-clear them each time since there's no point allowing custom bindings anyway
+            if (touch_input_context.get_registered_manual_keys().size() > 0)
+                qsl.clear();
+
+            // First process registered actions
+            std::vector<std::string>& registered_actions = touch_input_context.get_registered_actions();
+            for (std::vector<std::string>::iterator it = registered_actions.begin(); it != registered_actions.end(); ++it) {
+                std::string& action = *it;
+                if (ignore_action_for_quick_shortcuts(action))
+                    continue;
+
+                add_best_key_for_action_to_quick_shortcuts(action, category, !shortcut_right);
+            }            
+
+            // Then process manual keys
+            std::vector<input_context::manual_key>& registered_manual_keys = touch_input_context.get_registered_manual_keys();
+            for (const auto& manual_key : registered_manual_keys) {
+                input_event event(manual_key.key, CATA_INPUT_KEYBOARD);
+                add_quick_shortcut(qsl, event, !shortcut_right, true);
+            }
+        }
+    }
+
+    // Only reorder quick shortcuts for non-gameplay lists that are likely to have navigational menu stuff
+    if (!is_default_mode)
+        reorder_quick_shortcuts(qsl);
+
+    float border, width, height;
+    get_quick_shortcut_dimensions(qsl, border, width, height);
+    input_event* hovered_quick_shortcut = get_quick_shortcut_under_finger();
+    SDL_Rect rect;
+    bool hovered, show_hint;
+    int i = 0;
+    for (std::list<input_event>::iterator it = qsl.begin(); it != qsl.end(); ++it) {
+        if ((i+1) * width > WindowWidth * get_option<int>("ANDROID_SHORTCUT_SCREEN_PERCENTAGE") * 0.01f)
+            continue;
+        input_event& event = *it;
+        std::string text = event.text;
+        long key = event.get_first_input();
+        float default_text_scale = std::floor(0.75f * (height / font->fontheight)); // default for single character strings
+        float text_scale = default_text_scale;
+        if (text.empty() || text == " ") {
+            text = inp_mngr.get_keyname(key, event.type);
+            text_scale = std::min(text_scale, 0.75f * (width / (font->fontwidth * text.length())));
+        }
+        hovered = is_quick_shortcut_touch && hovered_quick_shortcut == &event;
+        show_hint = hovered && SDL_GetTicks() - finger_down_time > (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY");
+        std::string hint_text;
+        if (show_hint) {
+            if (touch_input_context.get_category() == "INVENTORY" && inv_chars.valid(key)) {
+                // Special case for inventory items - show the inventory item name as help text
+                hint_text = g->u.inv.find_item(g->u.inv.invlet_to_position(key)).display_name();
+                if (hint_text == "none") {
+                    // We couldn't find this item in the inventory, let's check worn items
+                    for (const auto& item : g->u.worn) {
+                        if (item.invlet == key) {
+                            hint_text = item.display_name();
+                            break;
+                        }
+                    }
+                }
+                if (hint_text == "none") {
+                    // We couldn't find it in worn items either, must be weapon held
+                    if (g->u.weapon.invlet == key)
+                        hint_text = g->u.weapon.display_name();
+                }
+            }
+            else {
+                // All other screens - try and show the action name, either from registered actions or manually registered keys
+                hint_text = touch_input_context.get_action_name(touch_input_context.input_to_action(event));
+                if (hint_text == "ERROR") {
+                    hint_text = touch_input_context.get_action_name_for_manual_key(key);
+                }
+            }
+            if (hint_text == "ERROR" || hint_text == "none" || hint_text.empty())
+                show_hint = false;
+        }
+        if (shortcut_right)
+            rect = { WindowWidth - (int)((i+1) * width + border), (int)(WindowHeight - height), (int)(width - border*2), (int)(height) };
+        else
+            rect = { (int)(i * width + border), (int)(WindowHeight - height), (int)(width - border*2), (int)(height) };
+        if (hovered)
+            SDL_SetRenderDrawColor( renderer.get(), 0, 0, 0, 255 );
+        else
+            SDL_SetRenderDrawColor( renderer.get(), 0, 0, 0, get_option<int>("ANDROID_SHORTCUT_OPACITY_BG")*0.01f*255.0f );
+        SDL_SetRenderDrawBlendMode( renderer.get(), SDL_BLENDMODE_BLEND );
+        SDL_RenderFillRect( renderer.get(), &rect );
+        if (hovered) {
+            // draw a second button hovering above the first one
+            if (shortcut_right)
+                rect = { WindowWidth - (int)((i+1) * width + border), (int)(WindowHeight - height * 2.2f), (int)(width - border*2), (int)(height) };
+            else
+                rect = { (int)(i * width + border), (int)(WindowHeight - height * 2.2f), (int)(width - border*2), (int)(height) };
+            SDL_SetRenderDrawColor( renderer.get(), 0, 0, 196, 255 );
+            SDL_RenderFillRect( renderer.get(), &rect );
+
+            if (show_hint) {
+                // draw a backdrop for the hint text
+                rect = { 0, (int)((WindowHeight - height)*0.5f), (int)WindowWidth, (int)height };
+                SDL_SetRenderDrawColor( renderer.get(), 0, 0, 0, get_option<int>("ANDROID_SHORTCUT_OPACITY_BG")*0.01f*255.0f );
+                SDL_RenderFillRect( renderer.get(), &rect );                
+            }
+        }
+        SDL_SetRenderDrawBlendMode( renderer.get(), SDL_BLENDMODE_NONE );
+        SDL_RenderSetScale( renderer.get(), text_scale, text_scale);
+        int text_x, text_y;
+        if (shortcut_right)
+            text_x = (WindowWidth - (i + 0.5f) * width - (font->fontwidth * text.length()) * text_scale * 0.5f) / text_scale;
+        else
+            text_x = ((i + 0.5f) * width - (font->fontwidth * text.length()) * text_scale * 0.5f) / text_scale;
+        text_y = (WindowHeight - (height + font->fontheight * text_scale) * 0.5f) / text_scale;
+        font->opacity = get_option<int>("ANDROID_SHORTCUT_OPACITY_SHADOW")*0.01f;
+        font->OutputChar( text, text_x+1, text_y+1, 0, cata_cursesport::font_style() );
+        font->opacity = get_option<int>("ANDROID_SHORTCUT_OPACITY_FG")*0.01f;
+        font->OutputChar( text, text_x, text_y, get_option<int>("ANDROID_SHORTCUT_COLOR"), cata_cursesport::font_style() );
+        if (hovered) {
+            // draw a second button hovering above the first one
+            font->OutputChar( text, text_x, text_y - (height*1.2f / text_scale), get_option<int>("ANDROID_SHORTCUT_COLOR"), cata_cursesport::font_style() );
+            if (show_hint) {
+                // draw hint text
+                text_scale = default_text_scale;
+                hint_text = text + " " + hint_text;
+                hint_text = remove_color_tags(hint_text);
+                const float safe_margin = 0.9f;
+                int hint_length = utf8_width(hint_text);
+                if (WindowWidth * safe_margin < font->fontwidth * text_scale * hint_length)
+                    text_scale *= (WindowWidth * safe_margin) / (font->fontwidth * text_scale * hint_length); // scale to fit comfortably
+                SDL_RenderSetScale( renderer.get(), text_scale, text_scale);
+                font->opacity = get_option<int>("ANDROID_SHORTCUT_OPACITY_SHADOW")*0.01f;
+                text_x = (WindowWidth - ((font->fontwidth  * hint_length) * text_scale)) * 0.5f / text_scale;
+                text_y = (WindowHeight - font->fontheight * text_scale) * 0.5f / text_scale;
+                font->OutputChar( hint_text, text_x+1, text_y+1, 0, cata_cursesport::font_style() );
+                font->opacity = get_option<int>("ANDROID_SHORTCUT_OPACITY_FG")*0.01f;
+                font->OutputChar( hint_text, text_x, text_y, get_option<int>("ANDROID_SHORTCUT_COLOR"), cata_cursesport::font_style() );
+            }
+        }
+        font->opacity = 1.0f;
+        SDL_RenderSetScale( renderer.get(), 1.0f, 1.0f);
+        i++;
+        if ((i+1) * width > WindowWidth)
+            break;
+    }
+}
+
+
+void draw_virtual_joystick() {
+
+	// Bail out if we don't need to draw the joystick
+    if (!get_option<bool>("ANDROID_SHOW_VIRTUAL_JOYSTICK") || 
+        finger_down_time <= 0 || 
+        SDL_GetTicks() - finger_down_time <= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY") || 
+        is_quick_shortcut_touch || 
+        is_two_finger_touch)
+        return;
+
+    SDL_SetTextureAlphaMod( touch_joystick, get_option<int>("ANDROID_VIRTUAL_JOYSTICK_OPACITY")*0.01f*255.0f );
+
+    float longest_window_edge = std::max(WindowWidth, WindowHeight);
+
+    SDL_Rect dstrect;
+
+    // Draw deadzone range
+    dstrect.w = dstrect.h = ( get_option<float>("ANDROID_DEADZONE_RANGE") ) * longest_window_edge * 2;
+    dstrect.x = finger_down_x - dstrect.w/2;
+    dstrect.y = finger_down_y - dstrect.h/2;
+    SDL_RenderCopy( renderer.get(), touch_joystick, NULL, &dstrect );
+
+    // Draw repeat delay range
+    dstrect.w = dstrect.h = ( get_option<float>("ANDROID_DEADZONE_RANGE") + get_option<float>("ANDROID_REPEAT_DELAY_RANGE") ) * longest_window_edge * 2;
+    dstrect.x = finger_down_x - dstrect.w/2;
+    dstrect.y = finger_down_y - dstrect.h/2;
+    SDL_RenderCopy( renderer.get(), touch_joystick, NULL, &dstrect );
+
+    // Draw current touch position (50% size of repeat delay range)
+    dstrect.w = dstrect.h = dstrect.w/2;
+    dstrect.x = finger_down_x + (finger_curr_x - finger_down_x)/2 - dstrect.w/2;
+    dstrect.y = finger_down_y + (finger_curr_y - finger_down_y)/2 - dstrect.h/2;
+    SDL_RenderCopy( renderer.get(), touch_joystick, NULL, &dstrect );
+
+}
+
+float clmp( float value, float low, float high ) { return ( value < low ) ? low : ( ( value > high ) ? high : value ); }
+float lerp(float t, float a, float b) { return (1.0f - t) * a + t * b; }
+
+void update_finger_repeat_delay() {
+    float delta_x = finger_curr_x - finger_down_x;
+    float delta_y = finger_curr_y - finger_down_y;
+    float dist = (float)sqrtf(delta_x*delta_x + delta_y*delta_y);
+    float longest_window_edge = std::max(WindowWidth, WindowHeight);
+    float t = clmp((dist - (get_option<float>("ANDROID_DEADZONE_RANGE")*longest_window_edge)) / std::max(0.01f, (get_option<float>("ANDROID_REPEAT_DELAY_RANGE"))*longest_window_edge), 0.0f, 1.0f);
+    finger_repeat_delay = lerp(std::pow(t, get_option<float>("ANDROID_SENSITIVITY_POWER")), 
+        (unsigned long)std::max(get_option<int>("ANDROID_REPEAT_DELAY_MIN"), get_option<int>("ANDROID_REPEAT_DELAY_MAX")), 
+        (unsigned long)std::min(get_option<int>("ANDROID_REPEAT_DELAY_MIN"), get_option<int>("ANDROID_REPEAT_DELAY_MAX")));
+}
+
+// TODO: Is there a better way to detect when string entry is allowed?
+// ANY_INPUT seems close but is abused by code everywhere.
+// Had a look through and think I've got all the cases but can't be 100% sure.
+bool is_string_input(input_context& ctx) {
+    std::string& category = ctx.get_category();
+    return category == "STRING_INPUT"
+        || category == "HELP_KEYBINDINGS"
+        || category == "NEW_CHAR_DESCRIPTION"
+        || category == "WORLDGEN_CONFIRM_DIALOG";
+}
+
+long get_key_event_from_string(const std::string& str) {
+    if (str.length())
+        return (long)str[0];
+    return -1;
+}
+// This function is triggered on finger up events, OR by a repeating timer for touch hold events.
+void handle_finger_input(unsigned long ticks) {
+
+    float delta_x = finger_curr_x - finger_down_x;
+    float delta_y = finger_curr_y - finger_down_y;
+    float dist = (float)sqrtf(delta_x*delta_x + delta_y*delta_y); // in pixel space
+    bool handle_diagonals = touch_input_context.is_action_registered("LEFTUP");
+    bool is_default_mode = touch_input_context.get_category() == "DEFAULTMODE";
+    if (dist > (get_option<float>("ANDROID_DEADZONE_RANGE")*std::max(WindowWidth, WindowHeight))) {
+        if (!handle_diagonals) {
+            if (delta_x >= 0 && delta_y >= 0)
+                last_input = input_event(delta_x > delta_y ? KEY_RIGHT : KEY_DOWN, CATA_INPUT_KEYBOARD);
+            else if (delta_x < 0 && delta_y >= 0)
+                last_input = input_event(-delta_x > delta_y ? KEY_LEFT : KEY_DOWN, CATA_INPUT_KEYBOARD);
+            else if (delta_x >= 0 && delta_y < 0)
+                last_input = input_event(delta_x > -delta_y ? KEY_RIGHT : KEY_UP, CATA_INPUT_KEYBOARD);
+            else if (delta_x < 0 && delta_y < 0)
+                last_input = input_event(-delta_x > -delta_y ? KEY_LEFT : KEY_UP, CATA_INPUT_KEYBOARD);
+        }
+        else {
+            if (delta_x > 0) {
+                if (std::abs(delta_y) < delta_x * 0.5f) {
+                    // swipe right
+                    last_input = input_event(KEY_RIGHT, CATA_INPUT_KEYBOARD);
+                }
+                else if (std::abs(delta_y) < delta_x * 2.0f) {
+                    if (delta_y < 0) {
+                        // swipe up-right
+                        last_input = input_event(JOY_RIGHTUP, CATA_INPUT_GAMEPAD);
+                    }
+                    else {
+                        // swipe down-right
+                        last_input = input_event(JOY_RIGHTDOWN, CATA_INPUT_GAMEPAD);
+                    }
+                }
+                else {
+                    if (delta_y < 0) {
+                        // swipe up
+                        last_input = input_event(KEY_UP, CATA_INPUT_KEYBOARD);
+                    }
+                    else {
+                        // swipe down
+                        last_input = input_event(KEY_DOWN, CATA_INPUT_KEYBOARD);
+                    }
+                }
+            }
+            else {
+                if (std::abs(delta_y) < -delta_x * 0.5f) {
+                    // swipe left
+                    last_input = input_event(KEY_LEFT, CATA_INPUT_KEYBOARD);
+                }
+                else if (std::abs(delta_y) < -delta_x * 2.0f) {
+                    if (delta_y < 0) {
+                        // swipe up-left
+                        last_input = input_event(JOY_LEFTUP, CATA_INPUT_GAMEPAD);
+
+                    }
+                    else {
+                        // swipe down-left
+                        last_input = input_event(JOY_LEFTDOWN, CATA_INPUT_GAMEPAD);
+                    }
+                }
+                else {
+                    if (delta_y < 0) {
+                        // swipe up
+                        last_input = input_event(KEY_UP, CATA_INPUT_KEYBOARD);
+                    }
+                    else {
+                        // swipe down
+                        last_input = input_event(KEY_DOWN, CATA_INPUT_KEYBOARD);
+                    }
+                }
+            }
+        }
+    }
+    else {
+        if (ticks - finger_down_time >= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+            // Single tap (repeat) - held, so always treat this as a tap
+            // We only allow repeats for waiting, not confirming in menus as that's a bit silly
+            if (is_default_mode)
+                last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_TAP_KEY")), CATA_INPUT_KEYBOARD);
+        }
+        else {
+            if (last_tap_time > 0 && ticks - last_tap_time < (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+                // Double tap
+                last_input = input_event(is_default_mode ? KEY_ESCAPE : KEY_ESCAPE, CATA_INPUT_KEYBOARD);
+                last_tap_time = 0;
+            }
+            else {
+                // First tap detected, waiting to decide whether it's a single or a double tap input
+                last_tap_time = ticks;
+            }
+        }
+    }
+}
+
+bool android_is_hardware_keyboard_available() {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    jclass clazz(env->GetObjectClass(activity));
+    jmethodID method_id = env->GetMethodID(clazz, "isHardwareKeyboardAvailable", "()Z");
+    jboolean ans = env->CallBooleanMethod(activity, method_id);
+    env->DeleteLocalRef(activity);
+    env->DeleteLocalRef(clazz);
+    return ans;
+}
+
+void android_vibrate() {
+    int vibration_ms = get_option<int>("ANDROID_VIBRATION");
+    if (vibration_ms > 0 && !android_is_hardware_keyboard_available()) {
+        JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+        jobject activity = (jobject)SDL_AndroidGetActivity();
+        jclass clazz(env->GetObjectClass(activity));
+        jmethodID method_id = env->GetMethodID(clazz, "vibrate", "(I)V");
+        env->CallVoidMethod(activity, method_id, vibration_ms);
+        env->DeleteLocalRef(activity);
+        env->DeleteLocalRef(clazz);
+    }    
+}
+#endif
+
 //Check for any window messages (keypress, paint, mousemove, etc)
 void CheckMessages()
 {
     SDL_Event ev;
     bool quit = false;
+    bool text_refresh = false;
+    bool is_repeat = false;
     if(HandleDPad()) {
         return;
     }
+
+#ifdef __ANDROID__
+    if (visible_display_frame_dirty) {
+       needupdate = true;
+       visible_display_frame_dirty = false;
+    }
+
+    unsigned long ticks = SDL_GetTicks();
+
+    // Force text input mode if hardware keyboard is available.
+    if (android_is_hardware_keyboard_available() && !SDL_IsTextInputActive())
+        SDL_StartTextInput();
+
+    // Make sure the SDL surface view is visible, otherwise the "Z" loading screen is visible.
+    if (needs_sdl_surface_visibility_refresh)
+    {
+        needs_sdl_surface_visibility_refresh = false;
+
+		// Call Java show_sdl_surface()
+        JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+        jobject activity = (jobject)SDL_AndroidGetActivity();
+        jclass clazz(env->GetObjectClass(activity));
+        jmethodID method_id = env->GetMethodID(clazz, "show_sdl_surface", "()V");
+        env->CallVoidMethod(activity, method_id);
+        env->DeleteLocalRef(activity);
+        env->DeleteLocalRef(clazz);        
+    }
+
+    // Copy the current input context
+    if (input_context::input_context_stack.size() > 0) {
+        input_context* new_input_context = *--input_context::input_context_stack.end();
+        if (new_input_context && *new_input_context != touch_input_context) {
+
+            // If we were in an allow_text_entry input context, and text input is still active, and we're auto-managing keyboard, hide it.
+            if (touch_input_context.allow_text_entry && 
+                !new_input_context->allow_text_entry && 
+                !is_string_input(*new_input_context) && 
+                SDL_IsTextInputActive() && 
+                get_option<bool>("ANDROID_AUTO_KEYBOARD"))
+                SDL_StopTextInput();
+
+            touch_input_context = *new_input_context;
+            needupdate = true;
+        }
+    }
+
+    bool is_default_mode = touch_input_context.get_category() == "DEFAULTMODE";
+    quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(touch_input_context.get_category())];
+
+    // Don't do this logic if we already need an update, otherwise we're likely to overload the game with too much input on hold repeat events
+    if (!needupdate) {
+
+        // Check action weightings and auto-add any immediate-surrounding actions as quick shortcuts
+        // This code is based heavily off action.cpp handle_action_menu() which puts common shortcuts at the top
+        if (is_default_mode && get_option<bool>("ANDROID_SHORTCUT_AUTOADD")) {
+            static int last_moves_since_last_save = -1;
+            if (last_moves_since_last_save != g->get_moves_since_last_save()) {
+                last_moves_since_last_save = g->get_moves_since_last_save();
+
+                // Actions to add
+                std::set<action_id> actions;
+
+                // Actions to remove - we only want to remove things that we're 100% sure won't be useful to players otherwise
+                std::set<action_id> actions_remove;
+                
+                // Check if we're in a potential combat situation, if so, sort a few actions to the top.
+                if( !g->u.get_hostile_creatures( 60 ).empty() ) {
+                    // Only prioritize movement options if we're not driving.
+                    if( !g->u.controlling_vehicle ) {
+                        actions.insert(ACTION_TOGGLE_MOVE);
+                    }
+                    // Only prioritize fire weapon options if we're wielding a ranged weapon.
+                    if( g->u.weapon.is_gun() || g->u.weapon.has_flag( "REACH_ATTACK" ) ) {
+                        actions.insert(ACTION_FIRE);
+                    }
+                }
+
+                // If we're already running, make it simple to toggle running to off.
+                if( g->u.move_mode != "walk" ) {
+                    actions.insert(ACTION_TOGGLE_MOVE);
+                }
+
+                // We're not already running or in combat, so remove toggle walk/run
+                if (std::find(actions.begin(), actions.end(), ACTION_TOGGLE_MOVE) == actions.end()) {
+                    actions_remove.insert(ACTION_TOGGLE_MOVE);
+                }
+
+                // Check if we can perform one of our actions on nearby terrain. If so,
+                // display that action at the top of the list.
+                for( int dx = -1; dx <= 1; dx++ ) {
+                    for( int dy = -1; dy <= 1; dy++ ) {
+                        int x = g->u.posx() + dx;
+                        int y = g->u.posy() + dy;
+                        int z = g->u.posz();
+                        const tripoint pos( x, y, z );
+        
+                        // Check if we're near a vehicle, if so, vehicle controls should be top.
+                        {
+                            const optional_vpart_position vp = g->m.veh_at( pos );
+                            vehicle *const veh = veh_pointer_or_null( vp );
+                            if( veh ) {
+                                int veh_part = vp ? vp->part_index() : -1;
+                                if (veh->part_with_feature(veh_part, "CONTROLS") >= 0)
+                                    actions.insert(ACTION_CONTROL_VEHICLE);
+                                int openablepart = veh->part_with_feature(veh_part, "OPENABLE");
+                                if (openablepart >= 0 && veh->is_open(openablepart) && (dx != 0 || dy != 0)) // an open door adjacent to us
+                                    actions.insert(ACTION_CLOSE);
+                                int curtainpart = veh->part_with_feature(veh_part, "CURTAIN");
+                                if (curtainpart >= 0 && veh->is_open(curtainpart) && (dx != 0 || dy != 0))
+                                    actions.insert(ACTION_CLOSE);
+                                if (dx == 0 && dy == 0) {
+                                    int cargopart = veh->part_with_feature(veh_part, "CARGO");
+                                    bool can_pickup = cargopart >= 0 && (!veh->get_items(cargopart).empty());
+                                    if (can_pickup)
+                                        actions.insert(ACTION_PICKUP);
+                                }
+                            }
+                        }
+
+                        if( dx != 0 || dy != 0 ) {
+                            // Check for actions that work on nearby tiles
+                            //if( can_interact_at( ACTION_OPEN, pos ) ) {
+                                // don't bother with open since user can just walk into target
+                            //}
+                            if( can_interact_at( ACTION_CLOSE, pos ) ) {
+                                actions.insert(ACTION_CLOSE);
+                            }
+                            if( can_interact_at( ACTION_EXAMINE, pos ) ) {
+                                actions.insert(ACTION_EXAMINE);
+                            }
+                        } else {
+                            // Check for actions that work on own tile only
+                            if( can_interact_at( ACTION_BUTCHER, pos ) ) {
+                                actions.insert(ACTION_BUTCHER);
+                            }
+                            else {
+                                actions_remove.insert(ACTION_BUTCHER);
+                            }
+                            
+                            if( can_interact_at( ACTION_MOVE_UP, pos ) ) {
+                                actions.insert(ACTION_MOVE_UP);
+                            }
+                            else {
+                                actions_remove.insert(ACTION_MOVE_UP);
+                            }
+
+                            if( can_interact_at( ACTION_MOVE_DOWN, pos ) ) {
+                                actions.insert(ACTION_MOVE_DOWN);
+                            }
+                            else {
+                                actions_remove.insert(ACTION_MOVE_DOWN);
+                            }
+                        }
+                    }
+                }
+
+                // We're not near a vehicle, so remove control vehicle
+                if (std::find(actions.begin(), actions.end(), ACTION_CONTROL_VEHICLE) == actions.end()) {
+                    actions_remove.insert(ACTION_CONTROL_VEHICLE);
+                }
+
+                // We're not able to close anything nearby, so remove it
+                if (std::find(actions.begin(), actions.end(), ACTION_CLOSE) == actions.end()) {
+                    actions_remove.insert(ACTION_CLOSE);
+                }
+
+                // We're not able to examine anything nearby, so remove it
+                if (std::find(actions.begin(), actions.end(), ACTION_EXAMINE) == actions.end()) {
+                    actions_remove.insert(ACTION_EXAMINE);
+                }
+
+                // If we're standing on items, allow player to pick them up.
+                if( g->m.has_items( g->u.pos() ) ) {
+                    actions.insert(ACTION_PICKUP);
+                }
+
+                // We're not able to pickup anything, so remove it
+                if (std::find(actions.begin(), actions.end(), ACTION_PICKUP) == actions.end()) {
+                    actions_remove.insert(ACTION_PICKUP);
+                }
+
+                // Check if we can't move because of safe mode - if so, add ability to ignore
+                if (g && !g->check_safe_mode_allowed(false)) {
+                    actions.insert(ACTION_IGNORE_ENEMY);
+                    actions.insert(ACTION_TOGGLE_SAFEMODE);
+                }
+                else {
+                    actions_remove.insert(ACTION_IGNORE_ENEMY);
+                    actions_remove.insert(ACTION_TOGGLE_SAFEMODE);
+                }
+
+                // Check if we're significantly hungry or thirsty - if so, add eat
+                if (g->u.get_hunger() > 100 || g->u.get_thirst() > 40) {
+                    actions.insert(ACTION_EAT);
+                }
+
+                // Check if we're dead tired - if so, add sleep
+                if (g->u.get_fatigue() > DEAD_TIRED) {
+                    actions.insert(ACTION_SLEEP);
+                }
+
+                for(const auto& action : actions) {
+                    if (add_best_key_for_action_to_quick_shortcuts(action, touch_input_context.get_category(), !get_option<bool>("ANDROID_SHORTCUT_AUTOADD_FRONT")))
+						needupdate = true;
+                }
+
+                size_t old_size = qsl.size();
+                for(const auto& action_remove : actions_remove)
+                    remove_action_from_quick_shortcuts(action_remove, touch_input_context.get_category());
+                if (qsl.size() != old_size)
+                    needupdate = true;
+            }
+        }
+
+		if (remove_expired_actions_from_quick_shortcuts(touch_input_context.get_category()))
+			needupdate = true;
+
+        // Toggle quick shortcuts on/off
+        if (ac_back_down_time > 0 && ticks - ac_back_down_time > (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+            if (!quick_shortcuts_toggle_handled) {
+                quick_shortcuts_enabled = !quick_shortcuts_enabled;
+                quick_shortcuts_toggle_handled = true;
+                refresh_display();
+
+                // Display an Android toast message
+                {
+                    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+                    jobject activity = (jobject)SDL_AndroidGetActivity();
+                    jclass clazz(env->GetObjectClass(activity));
+                    jstring toast_message = env->NewStringUTF(quick_shortcuts_enabled ? "Shortcuts visible" : "Shortcuts hidden");
+                    jmethodID method_id = env->GetMethodID(clazz, "toast", "(Ljava/lang/String;)V");
+                    env->CallVoidMethod(activity, method_id, toast_message);
+                    env->DeleteLocalRef(activity);
+                    env->DeleteLocalRef(clazz);
+                }
+            }
+        }
+
+        // Handle repeating inputs from touch + holds
+        if (!is_quick_shortcut_touch && !is_two_finger_touch && finger_down_time > 0 && ticks - finger_down_time > (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+            if (ticks - finger_repeat_time > finger_repeat_delay) {
+                handle_finger_input(ticks);
+                finger_repeat_time = ticks;
+                return;
+            }
+        }
+
+        // If we received a first tap and not another one within a certain period, this was a single tap, so trigger the input event
+        if (!is_quick_shortcut_touch && !is_two_finger_touch && last_tap_time > 0 && ticks - last_tap_time >= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+            // Single tap
+            last_tap_time = ticks;
+            last_input = input_event(is_default_mode ? get_key_event_from_string(get_option<std::string>("ANDROID_TAP_KEY")) : '\n', CATA_INPUT_KEYBOARD);
+            last_tap_time = 0;
+            return;
+        }
+
+        // ensure hint text pops up even if player doesn't move finger to trigger a FINGERMOTION event
+        if (is_quick_shortcut_touch && finger_down_time > 0 && ticks - finger_down_time > (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+            needupdate = true;
+        }
+    }
+#endif
 
     last_input = input_event();
     while(SDL_PollEvent(&ev)) {
         switch(ev.type) {
             case SDL_WINDOWEVENT:
                 switch(ev.window.event) {
+#ifdef __ANDROID__
+                // SDL will send a focus lost event whenever the app loses focus (eg. lock screen, switch app focus etc.)
+                // If we detect it and the game seems in a saveable state, try and do a quicksave. This is a bit dodgy
+                // as the player could be ANYWHERE doing ANYTHING (a sub-menu, interacting with an NPC/computer etc.)
+                // but it seems to work so far, and the alternative is the player losing their progress as the app is likely
+                // to be destroyed pretty quickly when it goes out of focus due to memory usage.
+                case SDL_WINDOWEVENT_FOCUS_LOST:
+                    if (world_generator &&
+                        world_generator->active_world && 
+                        g && g->uquit == QUIT_NO && 
+                        get_option<bool>("ANDROID_QUICKSAVE") &&
+                        !std::uncaught_exception()) 
+                        g->quicksave();
+                    break;
+                // SDL sends a window size changed event whenever the screen rotates orientation
+                case SDL_WINDOWEVENT_SIZE_CHANGED:
+                    WindowWidth = ev.window.data1;
+                    WindowHeight = ev.window.data2;
+                    SDL_Delay(500);
+                    SDL_GetWindowSurface(window.get());
+                    refresh_display();
+                    needupdate = true;
+                    break;
+#endif
                 case SDL_WINDOWEVENT_SHOWN:
                 case SDL_WINDOWEVENT_EXPOSED:
                 case SDL_WINDOWEVENT_RESTORED:
                     needupdate = true;
+#ifdef __ANDROID__
+					needs_sdl_surface_visibility_refresh = true;
+					if(android_is_hardware_keyboard_available()) {
+						SDL_StopTextInput();
+						SDL_StartTextInput();
+					}
+#endif
+                    break;
+                case SDL_WINDOWEVENT_RESIZED:
+                    needupdate = handle_resize( ev.window.data1, ev.window.data2 );
                     break;
                 default:
                     break;
@@ -1222,16 +2526,17 @@ void CheckMessages()
             break;
             case SDL_KEYDOWN:
             {
-                //hide mouse cursor on keyboard input
-                if(OPTIONS["HIDE_CURSOR"] != "show" && SDL_ShowCursor(-1)) {
-                    SDL_ShowCursor(SDL_DISABLE);
+#ifdef __ANDROID__
+                // Toggle virtual keyboard with Android back button. For some reason I get double inputs, so ignore everything once it's already down.
+                if (ev.key.keysym.sym == SDLK_AC_BACK && ac_back_down_time == 0) {
+                    ac_back_down_time = ticks;
+                    quick_shortcuts_toggle_handled = false;
                 }
-                const Uint8 *keystate = SDL_GetKeyboardState(NULL);
-                // manually handle Alt+F4 for older SDL lib, no big deal
-                if( ev.key.keysym.sym == SDLK_F4
-                && (keystate[SDL_SCANCODE_RALT] || keystate[SDL_SCANCODE_LALT]) ) {
-                    quit = true;
-                    break;
+#endif
+                is_repeat = ev.key.repeat;
+                //hide mouse cursor on keyboard input
+                if(get_option<std::string>( "HIDE_CURSOR" ) != "show" && SDL_ShowCursor(-1)) {
+                    SDL_ShowCursor(SDL_DISABLE);
                 }
                 const long lc = sdl_keysym_to_curses(ev.key.keysym);
                 if( lc <= 0 ) {
@@ -1241,11 +2546,43 @@ void CheckMessages()
                     // key was handled
                 } else {
                     last_input = input_event(lc, CATA_INPUT_KEYBOARD);
+#ifdef __ANDROID__
+                    if (!android_is_hardware_keyboard_available()) {
+                        if (!is_string_input(touch_input_context) && !touch_input_context.allow_text_entry) {
+                            if (get_option<bool>("ANDROID_AUTO_KEYBOARD"))
+                                SDL_StopTextInput();
+
+                            // add a quick shortcut
+                            if (!last_input.text.empty() || !inp_mngr.get_keyname(lc, CATA_INPUT_KEYBOARD).empty()) {
+                                qsl.remove(last_input);
+                                add_quick_shortcut(qsl, last_input, false, true);
+                                refresh_display();
+                            }
+                        }
+                        else if (lc == '\n' || lc == KEY_ESCAPE) {
+                            if (get_option<bool>("ANDROID_AUTO_KEYBOARD"))
+                                SDL_StopTextInput();
+                        }                        
+                    }
+#endif
                 }
             }
             break;
             case SDL_KEYUP:
             {
+#ifdef __ANDROID__
+				// Toggle virtual keyboard with Android back button
+                if (ev.key.keysym.sym == SDLK_AC_BACK) {
+                    if (ticks - ac_back_down_time <= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+                        if (SDL_IsTextInputActive())
+                            SDL_StopTextInput();
+                        else
+                            SDL_StartTextInput();
+                    }
+                    ac_back_down_time = 0;
+                }
+#endif
+                is_repeat = ev.key.repeat;
                 if( ev.key.keysym.sym == SDLK_LALT || ev.key.keysym.sym == SDLK_RALT ) {
                     int code = end_alt_code();
                     if( code ) {
@@ -1259,10 +2596,51 @@ void CheckMessages()
                 if( !add_alt_code( *ev.text.text ) ) {
                     const char *c = ev.text.text;
                     int len = strlen(ev.text.text);
+                    if( len > 0 ) {
+                        const unsigned lc = UTF8_getch( &c, &len );
+                        last_input = input_event( lc, CATA_INPUT_KEYBOARD );
+#ifdef __ANDROID__
+                        if (!android_is_hardware_keyboard_available()) {
+                            if (!is_string_input(touch_input_context) && !touch_input_context.allow_text_entry) {
+                                if (get_option<bool>("ANDROID_AUTO_KEYBOARD"))
+                                    SDL_StopTextInput();
+
+                                quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(touch_input_context.get_category())];
+                                qsl.remove(last_input);
+                                add_quick_shortcut(qsl, last_input, false, true);
+                                refresh_display();
+                            }
+                            else if (lc == '\n' || lc == KEY_ESCAPE) {
+                                if (get_option<bool>("ANDROID_AUTO_KEYBOARD"))
+                                    SDL_StopTextInput();
+                            }
+                        }
+#endif
+                    } else {
+                        // no key pressed in this event
+                        last_input = input_event();
+                        last_input.type = CATA_INPUT_KEYBOARD;
+                    }
+                    last_input.text = ev.text.text;
+                    text_refresh = true;
+                }
+            break;
+            case SDL_TEXTEDITING:
+            {
+                const char *c = ev.edit.text;
+                int len = strlen( ev.edit.text );
+                if( len > 0 ) {
                     const unsigned lc = UTF8_getch( &c, &len );
                     last_input = input_event( lc, CATA_INPUT_KEYBOARD );
-                    last_input.text = ev.text.text;
+                } else {
+                    // no key pressed in this event
+                    last_input = input_event();
+                    last_input.type = CATA_INPUT_KEYBOARD;
                 }
+                last_input.edit = ev.edit.text;
+                last_input.edit_refresh = true;
+                text_refresh = true;
+            }
             break;
             case SDL_JOYBUTTONDOWN:
                 last_input = input_event(ev.jbutton.button, CATA_INPUT_KEYBOARD);
@@ -1271,7 +2649,7 @@ void CheckMessages()
                 // TODO: somehow get the "digipad" values from the axes
             break;
             case SDL_MOUSEMOTION:
-                if (OPTIONS["HIDE_CURSOR"] == "show" || OPTIONS["HIDE_CURSOR"] == "hidekb") {
+                if (get_option<std::string>( "HIDE_CURSOR" ) == "show" || get_option<std::string>( "HIDE_CURSOR" ) == "hidekb") {
                     if (!SDL_ShowCursor(-1)) {
                         SDL_ShowCursor(SDL_ENABLE);
                     }
@@ -1300,16 +2678,172 @@ void CheckMessages()
                 }
                 break;
 
+#ifdef __ANDROID__
+              case SDL_FINGERMOTION:
+                    if (ev.tfinger.fingerId == 0) {
+                        if (!is_quick_shortcut_touch)
+                            update_finger_repeat_delay();
+                        needupdate = true; // ensure virtual joystick and quick shortcuts redraw as we interact
+                        finger_curr_x = ev.tfinger.x * WindowWidth;
+                        finger_curr_y = ev.tfinger.y * WindowHeight;
+
+                        if (get_option<bool>("ANDROID_VIRTUAL_JOYSTICK_FOLLOW") && !is_two_finger_touch) {
+                            // If we've moved too far from joystick center, offset joystick center automatically
+                            float delta_x = finger_curr_x - finger_down_x;
+                            float delta_y = finger_curr_y - finger_down_y;
+                            float dist = (float)sqrtf(delta_x*delta_x + delta_y*delta_y);
+                            float max_dist = (get_option<float>("ANDROID_DEADZONE_RANGE") + get_option<float>("ANDROID_REPEAT_DELAY_RANGE")) * std::max(WindowWidth, WindowHeight);
+                            if (dist > max_dist) {
+                                float delta_ratio = (dist / max_dist) - 1.0f;
+                                finger_down_x += delta_x * delta_ratio;
+                                finger_down_y += delta_y * delta_ratio;
+                            }                            
+                        }
+
+                    }
+                    else if (ev.tfinger.fingerId == 1) {
+                        second_finger_curr_x = ev.tfinger.x * WindowWidth;
+                        second_finger_curr_y = ev.tfinger.y * WindowHeight;
+                    }
+                break;
+              case SDL_FINGERDOWN:
+                    if (ev.tfinger.fingerId == 0) {
+                        finger_down_x = finger_curr_x = ev.tfinger.x * WindowWidth;
+                        finger_down_y = finger_curr_y = ev.tfinger.y * WindowHeight;
+                        finger_down_time = ticks;
+                        finger_repeat_time = 0;
+                        is_quick_shortcut_touch = get_quick_shortcut_under_finger() != NULL;
+                        if (!is_quick_shortcut_touch)
+                            update_finger_repeat_delay();
+                        needupdate = true; // ensure virtual joystick and quick shortcuts redraw as we interact
+                    } 
+                    else if (ev.tfinger.fingerId == 1) {
+                        if (!is_quick_shortcut_touch) {
+                            second_finger_down_x = second_finger_curr_x = ev.tfinger.x * WindowWidth;
+                            second_finger_down_y = second_finger_curr_y = ev.tfinger.y * WindowHeight;
+                            is_two_finger_touch = true;
+                        }
+                    }
+                break;
+              case SDL_FINGERUP:
+                if (ev.tfinger.fingerId == 0) {
+                    finger_curr_x = ev.tfinger.x * WindowWidth;
+                    finger_curr_y = ev.tfinger.y * WindowHeight;
+                    if (is_quick_shortcut_touch) {
+                        input_event* quick_shortcut = get_quick_shortcut_under_finger();
+                        if (quick_shortcut) {
+                            last_input = *quick_shortcut;
+                            if (get_option<bool>("ANDROID_SHORTCUT_MOVE_FRONT")) {
+                                quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(touch_input_context.get_category())];
+                                reorder_quick_shortcut(qsl, quick_shortcut->get_first_input(), false);
+                            }
+                            quick_shortcut->shortcut_last_used_action_counter = g->get_user_action_counter();
+                        }
+                        else {
+                            // Get the quick shortcut that was originally touched
+                            quick_shortcut = get_quick_shortcut_under_finger(true);
+                            if (quick_shortcut && 
+                                ticks - finger_down_time <= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY") &&
+                                finger_curr_y < finger_down_y &&
+                                finger_down_y - finger_curr_y > std::abs(finger_down_x - finger_curr_x))
+                            {
+                                // a flick up was detected, remove the quick shortcut!
+                                quick_shortcuts_t& qsl = quick_shortcuts_map[get_quick_shortcut_name(touch_input_context.get_category())];
+                                qsl.remove(*quick_shortcut);
+                            }
+                        }
+                    }
+                    else {
+                        if (is_two_finger_touch) {
+                            // handle zoom in/out
+                            if (is_default_mode) {
+                                float x1 = (finger_curr_x - finger_down_x);
+                                float y1 = (finger_curr_y - finger_down_y);
+                                float d1 = (float)(sqrtf(x1*x1+y1*y1));
+
+                                float x2 = (second_finger_curr_x - second_finger_down_x);
+                                float y2 = (second_finger_curr_y - second_finger_down_y);
+                                float d2 = (float)(sqrtf(x2*x2+y2*y2));
+
+                                float longest_window_edge = std::max(WindowWidth, WindowHeight);
+
+                                if (std::max(d1, d2) < get_option<float>("ANDROID_DEADZONE_RANGE") * longest_window_edge) {
+                                    last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_2_TAP_KEY")), CATA_INPUT_KEYBOARD);
+                                } else {
+                                    float dot = (x1*x2+y1*y2)/(d1*d2); // dot product of two finger vectors, -1 to +1
+                                    if (dot > 0.0f) { // both fingers mostly heading in same direction, check for double-finger swipe gesture
+                                        float dratio = d1/d2;
+                                        const float dist_ratio = 0.3f;
+                                        if (dratio > dist_ratio && dratio < (1.0f/dist_ratio)) { // both fingers moved roughly the same distance, so it's a double-finger swipe!
+                                            float xavg = 0.5f*(x1+x2);
+                                            float yavg = 0.5f*(y1+y2);
+                                            if (xavg > 0 && xavg > std::abs(yavg)) {
+                                                last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_2_SWIPE_LEFT_KEY")), CATA_INPUT_KEYBOARD);
+                                            } else if (xavg < 0 && -xavg > std::abs(yavg)) {
+                                                last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_2_SWIPE_RIGHT_KEY")), CATA_INPUT_KEYBOARD);
+                                            } else if (yavg > 0 && yavg > std::abs(xavg)) {
+                                                last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_2_SWIPE_DOWN_KEY")), CATA_INPUT_KEYBOARD);
+                                            } else {
+                                                last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_2_SWIPE_UP_KEY")), CATA_INPUT_KEYBOARD);
+                                            } 
+                                        }
+                                    } else {
+                                        // both fingers heading in opposite direction, check for zoom gesture
+                                        float down_x = finger_down_x - second_finger_down_x;
+                                        float down_y = finger_down_y - second_finger_down_y;
+                                        float down_dist = (float)sqrtf(down_x*down_x + down_y*down_y);
+
+                                        float curr_x = finger_curr_x - second_finger_curr_x;
+                                        float curr_y = finger_curr_y - second_finger_curr_y;
+                                        float curr_dist = (float)sqrtf(curr_x*curr_x + curr_y*curr_y);
+
+                                        const float zoom_ratio = 0.9f;
+                                        if (curr_dist < down_dist * zoom_ratio) {
+                                            last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_PINCH_IN_KEY")), CATA_INPUT_KEYBOARD);
+                                        } else if (curr_dist > down_dist / zoom_ratio) {
+                                            last_input = input_event(get_key_event_from_string(get_option<std::string>("ANDROID_PINCH_OUT_KEY")), CATA_INPUT_KEYBOARD);
+                                        }
+                                    }                                    
+                                }
+                            }
+                        }
+                        else if (ticks - finger_down_time <= (unsigned long)get_option<int>("ANDROID_INITIAL_DELAY")) {
+                            handle_finger_input(ticks);                        
+                        }
+                    }
+                    second_finger_down_x = second_finger_curr_x = finger_down_x = finger_curr_x = -1.0f;
+                    second_finger_down_y = second_finger_curr_y = finger_down_y = finger_curr_y = -1.0f;
+                    is_two_finger_touch = false;
+                    finger_down_time = 0;
+                    finger_repeat_time = 0;
+                    needupdate = true; // ensure virtual joystick and quick shortcuts are updated properly
+                    refresh_display(); // as above, but actually redraw it now as well
+                }
+                else if (ev.tfinger.fingerId == 1) {
+                    if (is_two_finger_touch) {
+                    // on second finger release, just remember the x/y position so we can calculate delta once first finger is done
+                    // is_two_finger_touch will be reset when first finger lifts (see above)
+                    second_finger_curr_x = ev.tfinger.x * WindowWidth;
+                    second_finger_curr_y = ev.tfinger.y * WindowHeight;                        
+                    }
+                }
+
+                break;
+#endif
+
             case SDL_QUIT:
                 quit = true;
                 break;
+        }
+        if( text_refresh && !is_repeat ) {
+            break;
         }
     }
     if (needupdate) {
         try_sdl_update();
     }
     if(quit) {
-        endwin();
+        catacurses::endwin();
         exit(0);
     }
 }
@@ -1321,63 +2855,36 @@ static bool ends_with(const std::string &text, const std::string &suffix) {
 }
 
 //***********************************
-//Psuedo-Curses Functions           *
+//Pseudo-Curses Functions           *
 //***********************************
 
-static void font_folder_list(std::ofstream& fout, std::string path)
+static void font_folder_list(std::ofstream& fout, const std::string &path, std::set<std::string> &bitmap_fonts)
 {
-    DIR *dir;
-    struct dirent *ent;
-    if ((dir = opendir (path.c_str())) != NULL) {
-        bool found = false;
-        while (!found && (ent = readdir (dir)) != NULL) {
-            if( 0 == strcmp( ent->d_name, "." ) ||
-                0 == strcmp( ent->d_name, ".." ) ) {
-                continue;
-            }
-            char path_last = *path.rbegin();
-            std::string f;
-            if (is_filesep(path_last)) {
-                f = path + ent->d_name;
-            } else {
-                f = path + FILE_SEP + ent->d_name;
-            }
-
-            struct stat stat_buffer;
-            if( stat( f.c_str(), &stat_buffer ) == -1 ) {
-                continue;
-            }
-            if( S_ISDIR(stat_buffer.st_mode) ) {
-                font_folder_list( fout, f );
-                continue;
-            }
-
-            TTF_Font* fnt = TTF_OpenFont(f.c_str(), 12);
-            if (fnt == NULL) {
+    for( const auto &f : get_files_from_path( "", path, true, false ) ) {
+            TTF_Font_Ptr fnt( TTF_OpenFont( f.c_str(), 12 ) );
+            if( !fnt ) {
                 continue;
             }
             long nfaces = 0;
-            nfaces = TTF_FontFaces(fnt);
-            TTF_CloseFont(fnt);
-            fnt = NULL;
+            nfaces = TTF_FontFaces( fnt.get() );
+            fnt.reset();
 
             for(long i = 0; i < nfaces; i++) {
-                fnt = TTF_OpenFontIndex(f.c_str(), 12, i);
-                if (fnt == NULL) {
+                const TTF_Font_Ptr fnt( TTF_OpenFontIndex( f.c_str(), 12, i ) );
+                if( !fnt ) {
                     continue;
                 }
 
                 // Add font family
-                char *fami = TTF_FontFaceFamilyName(fnt);
+                char *fami = TTF_FontFaceFamilyName( fnt.get() );
                 if (fami != NULL) {
                     fout << fami;
                 } else {
-                    TTF_CloseFont(fnt);
                     continue;
                 }
 
                 // Add font style
-                char *style = TTF_FontFaceStyleName(fnt);
+                char *style = TTF_FontFaceStyleName( fnt.get() );
                 bool isbitmap = ends_with(f, ".fon");
                 if (style != NULL && !isbitmap && strcasecmp(style, "Regular") != 0) {
                     fout << " " << style;
@@ -1404,57 +2911,49 @@ static void font_folder_list(std::ofstream& fout, std::string path)
                 fout << f << std::endl;
                 fout << i << std::endl;
 
-                TTF_CloseFont(fnt);
-                fnt = NULL;
-
                 // We use only 1 style in bitmap fonts.
                 if (isbitmap) {
                     break;
                 }
             }
-        }
-        closedir (dir);
     }
 }
 
 static void save_font_list()
 {
+    std::set<std::string> bitmap_fonts;
     std::ofstream fout(FILENAMES["fontlist"].c_str(), std::ios_base::trunc);
 
-    font_folder_list(fout, FILENAMES["fontdir"]);
+    font_folder_list(fout, FILENAMES["fontdir"], bitmap_fonts);
 
 #if (defined _WIN32 || defined WINDOWS)
     char buf[256];
     GetSystemWindowsDirectory(buf, 256);
     strcat(buf, "\\fonts");
-    font_folder_list(fout, buf);
+    font_folder_list(fout, buf, bitmap_fonts);
 #elif (defined _APPLE_ && defined _MACH_)
     /*
     // Well I don't know how osx actually works ....
-    font_folder_list(fout, "/System/Library/Fonts");
-    font_folder_list(fout, "/Library/Fonts");
+    font_folder_list(fout, "/System/Library/Fonts", bitmap_fonts);
+    font_folder_list(fout, "/Library/Fonts", bitmap_fonts);
 
     wordexp_t exp;
     wordexp("~/Library/Fonts", &exp, 0);
-    font_folder_list(fout, exp.we_wordv[0]);
+    font_folder_list(fout, exp.we_wordv[0], bitmap_fonts);
     wordfree(&exp);*/
 #else // Other POSIX-ish systems
-    font_folder_list(fout, "/usr/share/fonts");
-    font_folder_list(fout, "/usr/local/share/fonts");
+    font_folder_list(fout, "/usr/share/fonts", bitmap_fonts);
+    font_folder_list(fout, "/usr/local/share/fonts", bitmap_fonts);
     char *home;
     if( ( home = getenv( "HOME" ) ) ) {
         std::string userfontdir = home;
         userfontdir += "/.fonts";
-        font_folder_list( fout, userfontdir );
+        font_folder_list( fout, userfontdir, bitmap_fonts );
     }
 #endif
-
-    bitmap_fonts.clear();
-
-    fout << "end of list" << std::endl;
 }
 
-static std::string find_system_font(std::string name, int& faceIndex)
+static std::string find_system_font( const std::string &name, int& faceIndex )
 {
     const std::string fontlist_path = FILENAMES["fontlist"];
     std::ifstream fin(fontlist_path.c_str());
@@ -1479,331 +2978,183 @@ static std::string find_system_font(std::string name, int& faceIndex)
         std::string fname;
         std::string fpath;
         std::string iline;
-        int index = 0;
-        do {
-            getline(fin, fname);
-            if (fname == "end of list") break;
-            getline(fin, fpath);
-            getline(fin, iline);
-            index = atoi(iline.c_str());
+        while( getline( fin, fname ) && getline( fin, fpath ) && getline( fin, iline ) ) {
             if (0 == strcasecmp(fname.c_str(), name.c_str())) {
-                faceIndex = index;
+                faceIndex = atoi( iline.c_str() );
                 return fpath;
             }
-        } while (!fin.eof());
+        }
     }
 
     return "";
 }
 
-// bitmap font font size test
+// bitmap font size test
 // return face index that has this size or below
-static int test_face_size(std::string f, int size, int faceIndex)
+static int test_face_size( const std::string &f, int size, int faceIndex )
 {
-    TTF_Font* fnt = TTF_OpenFontIndex(f.c_str(), size, faceIndex);
-    if(fnt != NULL) {
-        char* style = TTF_FontFaceStyleName(fnt);
+    const TTF_Font_Ptr fnt( TTF_OpenFontIndex( f.c_str(), size, faceIndex ) );
+    if( fnt ) {
+        char* style = TTF_FontFaceStyleName( fnt.get() );
         if(style != NULL) {
-            int faces = TTF_FontFaces(fnt);
-            bool found = false;
-            for(int i = faces - 1; i >= 0 && !found; i--) {
-                TTF_Font* tf = TTF_OpenFontIndex(f.c_str(), size, i);
+            int faces = TTF_FontFaces( fnt.get() );
+            for(int i = faces - 1; i >= 0; i--) {
+                const TTF_Font_Ptr tf( TTF_OpenFontIndex( f.c_str(), size, i ) );
                 char* ts = NULL;
-                if(NULL != tf) {
-                   if( NULL != (ts = TTF_FontFaceStyleName(tf))) {
-                       if(0 == strcasecmp(ts, style) && TTF_FontHeight(tf) <= size) {
-                           faceIndex = i;
-                           found = true;
+                if( tf ) {
+                   if( NULL != ( ts = TTF_FontFaceStyleName( tf.get() ) ) ) {
+                       if( 0 == strcasecmp( ts, style ) && TTF_FontHeight( tf.get() ) <= size ) {
+                           return i;
                        }
                    }
-                   TTF_CloseFont(tf);
-                   tf = NULL;
                 }
             }
         }
-        TTF_CloseFont(fnt);
-        fnt = NULL;
     }
 
     return faceIndex;
 }
 
-// Calculates the new width of the window, given the number of columns.
-int projected_window_width(int)
+// Calculates the new width of the window
+int projected_window_width()
 {
-    return OPTIONS["TERMINAL_X"] * fontwidth;
+    return get_option<int>( "TERMINAL_X" ) * fontwidth;
 }
 
-// Calculates the new height of the window, given the number of rows.
-int projected_window_height(int)
+// Calculates the new height of the window
+int projected_window_height()
 {
-    return OPTIONS["TERMINAL_Y"] * fontheight;
+    return get_option<int>( "TERMINAL_Y" ) * fontheight;
 }
 
 //Basic Init, create the font, backbuffer, etc
-WINDOW *curses_init(void)
+void catacurses::init_interface()
 {
     last_input = input_event();
     inputdelay = -1;
 
-    std::string typeface, map_typeface, overmap_typeface;
-    int fontsize = 8;
-    int map_fontwidth = 8;
-    int map_fontheight = 16;
-    int map_fontsize = 8;
-    int overmap_fontwidth = 8;
-    int overmap_fontheight = 16;
-    int overmap_fontsize = 8;
-
-    std::ifstream jsonstream(FILENAMES["fontdata"].c_str(), std::ifstream::binary);
-    if (jsonstream.good()) {
-        JsonIn json(jsonstream);
-        JsonObject config = json.get_object();
-        fontblending = config.get_bool("fontblending", fontblending);
-        fontwidth = config.get_int("fontwidth", fontwidth);
-        fontheight = config.get_int("fontheight", fontheight);
-        fontsize = config.get_int("fontsize", fontsize);
-        typeface = config.get_string("typeface", typeface);
-        map_fontwidth = config.get_int("map_fontwidth", fontwidth);
-        map_fontheight = config.get_int("map_fontheight", fontheight);
-        map_fontsize = config.get_int("map_fontsize", fontsize);
-        map_typeface = config.get_string("map_typeface", typeface);
-        overmap_fontwidth = config.get_int("overmap_fontwidth", fontwidth);
-        overmap_fontheight = config.get_int("overmap_fontheight", fontheight);
-        overmap_fontsize = config.get_int("overmap_fontsize", fontsize);
-        overmap_typeface = config.get_string("overmap_typeface", typeface);
-        jsonstream.close();
-    } else { // User fontdata is missed. Try to load legacy fontdata.
-        std::ifstream InStream(FILENAMES["legacy_fontdata"].c_str(), std::ifstream::binary);
-        if(InStream.good()) {
-            JsonIn jIn(InStream);
-            JsonObject config = jIn.get_object();
-            fontblending = config.get_bool("fontblending", fontblending);
-            fontwidth = config.get_int("fontwidth", fontwidth);
-            fontheight = config.get_int("fontheight", fontheight);
-            fontsize = config.get_int("fontsize", fontsize);
-            typeface = config.get_string("typeface", typeface);
-            map_fontwidth = config.get_int("map_fontwidth", fontwidth);
-            map_fontheight = config.get_int("map_fontheight", fontheight);
-            map_fontsize = config.get_int("map_fontsize", fontsize);
-            map_typeface = config.get_string("map_typeface", typeface);
-            overmap_fontwidth = config.get_int("overmap_fontwidth", fontwidth);
-            overmap_fontheight = config.get_int("overmap_fontheight", fontheight);
-            overmap_fontsize = config.get_int("overmap_fontsize", fontsize);
-            overmap_typeface = config.get_string("overmap_typeface", typeface);
-            InStream.close();
-            // Save legacy as user fontdata.
-            assure_dir_exist(FILENAMES["config_dir"]);
-            std::ofstream OutStream(FILENAMES["fontdata"].c_str(), std::ofstream::binary);
-            if(!OutStream.good()) {
-                dbg(D_ERROR) << "Can't save user fontdata file.\n" <<
-                    "Check permissions for: " << FILENAMES["fontdata"];
-                return NULL;
-            }
-            JsonOut jOut(OutStream, true); // pretty-print
-            jOut.start_object();
-            jOut.member("fontblending", fontblending);
-            jOut.member("fontwidth", fontwidth);
-            jOut.member("fontheight", fontheight);
-            jOut.member("fontsize", fontsize);
-            jOut.member("typeface", typeface);
-            jOut.member("map_fontwidth", map_fontwidth);
-            jOut.member("map_fontheight", map_fontheight);
-            jOut.member("map_fontsize", map_fontsize);
-            jOut.member("map_typeface", map_typeface);
-            jOut.member("overmap_fontwidth", overmap_fontwidth);
-            jOut.member("overmap_fontheight", overmap_fontheight);
-            jOut.member("overmap_fontsize", overmap_fontsize);
-            jOut.member("overmap_typeface", overmap_typeface);
-            jOut.end_object();
-            OutStream << "\n";
-            OutStream.close();
-        } else {
-            dbg(D_ERROR) << "Can't load fontdata files.\n" << "Check permissions for:\n" <<
-                FILENAMES["legacy_fontdata"] << "\n" << FILENAMES["fontdata"];
-            return NULL;
-        }
-    }
+    font_loader fl;
+    fl.load();
+    ::fontwidth = fl.fontwidth;
+    ::fontheight = fl.fontheight;
 
     if(!InitSDL()) {
-        return NULL;
+        throw std::runtime_error( "InitSDL failed" );
     }
 
     find_videodisplays();
 
-    TERMINAL_WIDTH = OPTIONS["TERMINAL_X"];
-    TERMINAL_HEIGHT = OPTIONS["TERMINAL_Y"];
+    TERMINAL_WIDTH = get_option<int>( "TERMINAL_X" );
+    TERMINAL_HEIGHT = get_option<int>( "TERMINAL_Y" );
 
     if(!WinCreate()) {
-        return NULL;
+        throw std::runtime_error( "WinCreate failed" ); //@todo: throw from WinCreate
     }
 
     dbg( D_INFO ) << "Initializing SDL Tiles context";
-    tilecontext.reset(new cata_tiles(renderer));
+    tilecontext.reset( new cata_tiles( renderer.get() ) );
     try {
-        tilecontext->init();
-        dbg( D_INFO ) << "Tiles initialized successfully.";
+        tilecontext->load_tileset( get_option<std::string>( "TILES" ), true );
     } catch( const std::exception &err ) {
-        dbg( D_ERROR ) << "failed to initialize tile: " << err.what();
+        dbg( D_ERROR ) << "failed to check for tileset: " << err.what();
         // use_tiles is the cached value of the USE_TILES option.
         // most (all?) code refers to this to see if cata_tiles should be used.
         // Setting it to false disables this from getting used.
         use_tiles = false;
     }
 
+    color_loader<SDL_Color>().load( windowsPalette );
     init_colors();
 
     // initialize sound set
     load_soundset();
 
     // Reset the font pointer
-    font = Font::load_font(typeface, fontsize, fontwidth, fontheight);
+    font = Font::load_font( fl.typeface, fl.fontsize, fl.fontwidth, fl.fontheight, fl.fontblending );
     if( !font ) {
-        return NULL;
+        throw std::runtime_error( "loading font data failed" );
     }
-    map_font = Font::load_font(map_typeface, map_fontsize, map_fontwidth, map_fontheight);
-    overmap_font = Font::load_font( overmap_typeface, overmap_fontsize,
-                                    overmap_fontwidth, overmap_fontheight );
-    mainwin = newwin(get_terminal_height(), get_terminal_width(),0,0);
-    return mainwin;   //create the 'stdscr' window and return its ref
+    map_font = Font::load_font( fl.map_typeface, fl.map_fontsize, fl.map_fontwidth, fl.map_fontheight, fl.fontblending );
+    overmap_font = Font::load_font( fl.overmap_typeface, fl.overmap_fontsize,
+                                    fl.overmap_fontwidth, fl.overmap_fontheight, fl.fontblending );
+    stdscr = newwin(get_terminal_height(), get_terminal_width(),0,0);
+    //newwin calls `new WINDOW`, and that will throw, but not return nullptr.
+
+#ifdef __ANDROID__
+	// Make sure we initialize preview_terminal_width/height to sensible values
+    preview_terminal_width = TERMINAL_WIDTH * fontwidth;
+    preview_terminal_height = TERMINAL_HEIGHT * fontheight;
+#endif
 }
 
-std::unique_ptr<Font> Font::load_font(const std::string &typeface, int fontsize, int fontwidth, int fontheight)
+// This is supposed to be called from init.cpp, and only from there.
+void load_tileset() {
+    if( !tilecontext || !use_tiles ) {
+        return;
+    }
+    tilecontext->load_tileset( get_option<std::string>( "TILES" ) );
+    tilecontext->do_tile_loading_report();
+}
+
+std::unique_ptr<Font> Font::load_font(const std::string &typeface, int fontsize, int fontwidth, int fontheight, const bool fontblending )
 {
     if (ends_with(typeface, ".bmp") || ends_with(typeface, ".png")) {
         // Seems to be an image file, not a font.
         // Try to load as bitmap font.
-        std::unique_ptr<BitmapFont> bm_font( new BitmapFont(fontwidth, fontheight) );
         try {
-            bm_font->load_font(FILENAMES["fontdir"] + typeface);
-            // It worked, tell the world to use bitmap_font.
-            return std::unique_ptr<Font>( std::move( bm_font ) );
+            return std::unique_ptr<Font>( new BitmapFont( fontwidth, fontheight, FILENAMES["fontdir"] + typeface ) );
         } catch(std::exception &err) {
             dbg( D_ERROR ) << "Failed to load " << typeface << ": " << err.what();
             // Continue to load as truetype font
         }
     }
     // Not loaded as bitmap font (or it failed), try to load as truetype
-    std::unique_ptr<CachedTTFFont> ttf_font( new CachedTTFFont(fontwidth, fontheight) );
     try {
-        ttf_font->load_font(typeface, fontsize);
-        // It worked, tell the world to use cached_ttf_font
-        return std::unique_ptr<Font>( std::move( ttf_font ) );
+        return std::unique_ptr<Font>( new CachedTTFFont( fontwidth, fontheight, typeface, fontsize, fontblending ) );
     } catch(std::exception &err) {
         dbg( D_ERROR ) << "Failed to load " << typeface << ": " << err.what();
     }
     return nullptr;
 }
 
-//Ported from windows and copied comments as well
-//Not terribly sure how this function is suppose to work,
-//but jday helped to figure most of it out
-int curses_getch(WINDOW* win)
-{
-    input_event evt = inp_mngr.get_input_event(win);
-    while(evt.type != CATA_INPUT_KEYBOARD) {
-        evt = inp_mngr.get_input_event(win);
-        if (evt.type == CATA_INPUT_TIMEOUT) {
-            return ERR; // Calling functions expect an ERR on timeout
-        }
-    }
-    return evt.sequence[0];
-}
-
 //Ends the terminal, destroy everything
-int curses_destroy(void)
+void catacurses::endwin()
 {
     tilecontext.reset();
     font.reset();
     map_font.reset();
     overmap_font.reset();
     WinDestroy();
-    return 1;
 }
 
-//copied from gdi version and don't bother to rename it
-inline SDL_Color BGR(int b, int g, int r)
+template<>
+SDL_Color color_loader<SDL_Color>::from_rgb( const int r, const int g, const int b )
 {
     SDL_Color result;
     result.b=b;    //Blue
     result.g=g;    //Green
     result.r=r;    //Red
-    //result.a=0;//The Alpha, isnt used, so just set it to 0
+    //result.a=0;//The Alpha, is not used, so just set it to 0
     return result;
 }
 
-void load_colors( JsonObject &jsobj )
+void input_manager::set_timeout( const int t )
 {
-    JsonArray jsarr;
-    for( size_t c = 0; c < main_color_names.size(); c++ ) {
-        const std::string &color = main_color_names[c];
-        auto &bgr = consolecolors[color];
-        jsarr = jsobj.get_array( color );
-        bgr.resize( 3 );
-        // Strange ordering, isn't it? Entries in consolecolors are BGR,
-        // the json contains them as RGB.
-        bgr[0] = jsarr.get_int( 2 );
-        bgr[1] = jsarr.get_int( 1 );
-        bgr[2] = jsarr.get_int( 0 );
-    }
-}
-
-// translate color entry in consolecolors to SDL_Color
-inline SDL_Color ccolor( const std::string &color )
-{
-    const auto it = consolecolors.find( color );
-    if( it == consolecolors.end() ) {
-        dbg( D_ERROR ) << "requested non-existing color " << color << "\n";
-        return SDL_Color { 0, 0, 0, 0 };
-    }
-    return BGR( it->second[0], it->second[1], it->second[2] );
-}
-
-// This function mimics the ncurses interface. It must not throw.
-// Instead it should return ERR or OK, see man curs_color
-int curses_start_color( void )
-{
-    const std::string path = FILENAMES["colors"];
-    std::ifstream colorfile( path.c_str(), std::ifstream::in | std::ifstream::binary );
-    try {
-        JsonIn jsin( colorfile );
-        // Manually load the colordef object because the json handler isn't loaded yet.
-        jsin.start_array();
-        while( !jsin.end_array() ) {
-            JsonObject jo = jsin.get_object();
-            load_colors( jo );
-            jo.finish();
-        }
-    } catch( const JsonError &e ) {
-        dbg( D_ERROR ) << "Failed to load color definitions from " << path << ": " << e;
-        return ERR;
-    }
-    for( size_t c = 0; c < main_color_names.size(); c++ ) {
-        windowsPalette[c]  = ccolor( main_color_names[c] );
-    }
-    return OK;
-}
-
-void curses_timeout(int t)
-{
+    input_timeout = t;
     inputdelay = t;
 }
 
-extern WINDOW *mainwin;
-
 // This is how we're actually going to handle input events, SDL getch
 // is simply a wrapper around this.
-input_event input_manager::get_input_event(WINDOW *win) {
+input_event input_manager::get_input_event() {
     previously_pressed_key = 0;
     // standards note: getch is sometimes required to call refresh
     // see, e.g., http://linux.die.net/man/3/getch
     // so although it's non-obvious, that refresh() call (and maybe InvalidateRect?) IS supposed to be there
 
-    if(win == NULL) win = mainwin;
+    wrefresh( catacurses::stdscr );
 
-    wrefresh(win);
-
-    if (inputdelay < 0)
+	if (inputdelay < 0)
     {
         do
         {
@@ -1840,7 +3191,15 @@ input_event input_manager::get_input_event(WINDOW *win) {
         SDL_GetMouseState(&last_input.mouse_x, &last_input.mouse_y);
     } else if (last_input.type == CATA_INPUT_KEYBOARD) {
         previously_pressed_key = last_input.get_first_input();
+#ifdef __ANDROID__
+        android_vibrate();
+#endif
     }
+#ifdef __ANDROID__
+    else if (last_input.type == CATA_INPUT_GAMEPAD) {
+        android_vibrate();
+    }
+#endif
 
     return last_input;
 }
@@ -1851,18 +3210,15 @@ bool gamepad_available() {
 
 void rescale_tileset(int size) {
     tilecontext->set_draw_scale(size);
-    g->init_ui();
-    ClearScreen();
+    game_ui::init_ui();
 }
 
-bool input_context::get_coordinates(WINDOW* capture_win, int& x, int& y) {
+bool input_context::get_coordinates( const catacurses::window &capture_win_, int& x, int& y) {
     if(!coordinate_input_received) {
         return false;
     }
 
-    if (!capture_win) {
-        capture_win = g->w_terrain;
-    }
+    cata_cursesport::WINDOW *const capture_win = ( capture_win_.get() ? capture_win_ : g->w_terrain ).get<cata_cursesport::WINDOW>();
 
     // this contains the font dimensions of the capture_win,
     // not necessarily the global standard font dimensions.
@@ -1879,7 +3235,7 @@ bool input_context::get_coordinates(WINDOW* capture_win, int& x, int& y) {
         fh = map_font->fontheight;
     }
 
-    // Translate mouse coords to map coords based on tile size,
+    // Translate mouse coordinates to map coordinates based on tile size,
     // the window position is *always* in standard font dimensions!
     const int win_left = capture_win->x * fontwidth;
     const int win_top = capture_win->y * fontheight;
@@ -1921,53 +3277,31 @@ int get_terminal_height() {
     return TERMINAL_HEIGHT;
 }
 
-BitmapFont::BitmapFont(int w, int h)
-: Font(w, h)
+BitmapFont::BitmapFont( const int w, const int h, const std::string &typeface )
+: Font( w, h )
 {
-    memset(ascii, 0x00, sizeof(ascii));
-}
-
-BitmapFont::~BitmapFont()
-{
-    clear();
-}
-
-void BitmapFont::clear()
-{
-    for (size_t a = 0; a < 16; a++) {
-        if (ascii[a] != NULL) {
-            SDL_DestroyTexture(ascii[a]);
-            ascii[a] = NULL;
-        }
-    }
-}
-
-void BitmapFont::load_font(const std::string &typeface)
-{
-    clear();
     dbg( D_INFO ) << "Loading bitmap font [" + typeface + "]." ;
-    SDL_Surface *asciiload = IMG_Load(typeface.c_str());
-    if (asciiload == NULL) {
+    SDL_Surface_Ptr asciiload( IMG_Load( typeface.c_str() ) );
+    if( !asciiload ) {
         throw std::runtime_error(IMG_GetError());
     }
     if (asciiload->w * asciiload->h < (fontwidth * fontheight * 256)) {
-        SDL_FreeSurface(asciiload);
         throw std::runtime_error("bitmap for font is to small");
     }
     Uint32 key = SDL_MapRGB(asciiload->format, 0xFF, 0, 0xFF);
-    SDL_SetColorKey(asciiload,SDL_TRUE,key);
-    SDL_Surface *ascii_surf[16];
-    ascii_surf[0] = SDL_ConvertSurface(asciiload,format,0);
-    SDL_SetSurfaceRLE(ascii_surf[0], true);
-    SDL_FreeSurface(asciiload);
+    SDL_SetColorKey( asciiload.get(),SDL_TRUE,key );
+    SDL_Surface_Ptr ascii_surf[std::tuple_size<decltype( ascii )>::value];
+    ascii_surf[0].reset( SDL_ConvertSurface( asciiload.get(), format.get(), 0 ) );
+    SDL_SetSurfaceRLE( ascii_surf[0].get(), true );
+    asciiload.reset();
 
-    for (size_t a = 1; a < 16; ++a) {
-        ascii_surf[a] = SDL_ConvertSurface(ascii_surf[0],format,0);
-        SDL_SetSurfaceRLE(ascii_surf[a], true);
+    for (size_t a = 1; a < std::tuple_size<decltype( ascii )>::value; ++a) {
+        ascii_surf[a].reset( SDL_ConvertSurface( ascii_surf[0].get(), format.get(), 0 ) );
+        SDL_SetSurfaceRLE( ascii_surf[a].get(), true );
     }
 
-    for (size_t a = 0; a < 16 - 1; ++a) {
-        SDL_LockSurface(ascii_surf[a]);
+    for (size_t a = 0; a < std::tuple_size<decltype( ascii )>::value - 1; ++a) {
+        SDL_LockSurface( ascii_surf[a].get() );
         int size = ascii_surf[a]->h * ascii_surf[a]->w;
         Uint32 *pixels = (Uint32 *)ascii_surf[a]->pixels;
         Uint32 color = (windowsPalette[a].r << 16) | (windowsPalette[a].g << 8) | windowsPalette[a].b;
@@ -1976,19 +3310,19 @@ void BitmapFont::load_font(const std::string &typeface)
                 pixels[i] = color;
             }
         }
-        SDL_UnlockSurface(ascii_surf[a]);
+        SDL_UnlockSurface( ascii_surf[a].get() );
     }
     tilewidth = ascii_surf[0]->w / fontwidth;
 
     //convert ascii_surf to SDL_Texture
-    for(int a = 0; a < 16; ++a) {
-        ascii[a] = SDL_CreateTextureFromSurface(renderer,ascii_surf[a]);
-        SDL_FreeSurface(ascii_surf[a]);
+    for( size_t a = 0; a < std::tuple_size<decltype( ascii )>::value; ++a) {
+        ascii[a].reset( SDL_CreateTextureFromSurface( renderer.get(), ascii_surf[a].get() ) );
     }
 }
 
-void BitmapFont::draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG) const
+void BitmapFont::draw_ascii_lines(unsigned char line_id, int drawx, int drawy, int FG, cata_cursesport::font_style FS) const
 {
+    (void) FS; // unused
     BitmapFont *t = const_cast<BitmapFont*>(this);
     switch (line_id) {
         case LINE_OXOX_C://box bottom/top side (horizontal line)
@@ -2029,51 +3363,26 @@ void BitmapFont::draw_ascii_lines(unsigned char line_id, int drawx, int drawy, i
     }
 }
 
-
-
-
-CachedTTFFont::CachedTTFFont(int w, int h)
-: Font(w, h)
-, font(NULL)
+CachedTTFFont::CachedTTFFont( const int w, const int h, std::string _typeface, int _fontsize, const bool _fontblending )
+: Font( w, h )
+, fontblending( _fontblending )
+, typeface( _typeface )
+, fontsize( _fontsize )
+, faceIndex( 0 )
 {
-}
-
-CachedTTFFont::~CachedTTFFont()
-{
-    clear();
-}
-
-void CachedTTFFont::clear()
-{
-    if (font != NULL) {
-        TTF_CloseFont(font);
-        font = NULL;
-    }
-    for (t_glyph_map::iterator a = glyph_cache_map.begin(); a != glyph_cache_map.end(); ++a) {
-        if (a->second.texture) {
-            SDL_DestroyTexture(a->second.texture);
-        }
-    }
-    glyph_cache_map.clear();
-}
-
-void CachedTTFFont::load_font(std::string typeface, int fontsize)
-{
-    clear();
-    int faceIndex = 0;
     const std::string sysfnt = find_system_font(typeface, faceIndex);
     if (!sysfnt.empty()) {
         typeface = sysfnt;
         dbg( D_INFO ) << "Using font [" + typeface + "]." ;
     }
     //make fontdata compatible with wincurse
-    if(!fexists(typeface.c_str())) {
+    if(!file_exist(typeface)) {
         faceIndex = 0;
         typeface = FILENAMES["fontdir"] + typeface + ".ttf";
         dbg( D_INFO ) << "Using compatible font [" + typeface + "]." ;
     }
     //different default font with wincurse
-    if(!fexists(typeface.c_str())) {
+    if(!file_exist(typeface)) {
         faceIndex = 0;
         typeface = FILENAMES["fontdir"] + "fixedsys.ttf";
         dbg( D_INFO ) << "Using fallback font [" + typeface + "]." ;
@@ -2087,11 +3396,64 @@ void CachedTTFFont::load_font(std::string typeface, int fontsize)
         strcasecmp(typeface.substr(typeface.length() - 4).c_str(), ".fon") == 0 ) {
         faceIndex = test_face_size(typeface, fontsize, faceIndex);
     }
-    font = TTF_OpenFontIndex(typeface.c_str(), fontsize, faceIndex);
-    if (font == NULL) {
-        throw std::runtime_error(TTF_GetError());
+
+    // Preload normal styled font to force exception here
+    TTF_Font *font = get_font(cata_cursesport::font_style());
+    (void) font;
+}
+
+TTF_Font *CachedTTFFont::get_font(cata_cursesport::font_style FS)
+{
+    auto it = font_map.find(FS);
+    TTF_Font *_font = NULL;
+    if (it != font_map.end()) {
+        _font = it->second.get();
+        return _font;
     }
-    TTF_SetFontStyle(font, TTF_STYLE_NORMAL);
+
+    int style = TTF_STYLE_NORMAL;
+    int shrink_to_fit_style = TTF_STYLE_NORMAL;
+    if ( FS[cata_cursesport::FS_BOLD] ) {
+        style |= TTF_STYLE_BOLD;
+        shrink_to_fit_style |= TTF_STYLE_BOLD;
+    }
+    if ( FS[cata_cursesport::FS_ITALIC] ) {
+        style |= TTF_STYLE_ITALIC;
+    }
+    if ( FS[cata_cursesport::FS_STRIKETHROUGH] ) {
+        style |= TTF_STYLE_STRIKETHROUGH;
+        shrink_to_fit_style |= TTF_STYLE_STRIKETHROUGH;
+    }
+    if ( FS[cata_cursesport::FS_UNDERLINE] ) {
+        style |= TTF_STYLE_UNDERLINE;
+        shrink_to_fit_style |= TTF_STYLE_UNDERLINE;
+    }
+
+    int _fontsize = fontsize;
+    while ( _fontsize > 0 ) {
+        _font = TTF_OpenFontIndex( typeface.c_str(), _fontsize, faceIndex );
+        if( !_font ) {
+            throw std::runtime_error(TTF_GetError());
+        }
+        TTF_SetFontStyle( _font, shrink_to_fit_style );
+        int width = 0;
+        int height = 0;
+        // @todo: Check all to get maximum?
+        TTF_SizeText( _font, "#", &width, &height );
+        if ( width <= fontwidth && height <= fontheight ) {
+            break;
+        }
+        TTF_CloseFont( _font );
+        _font = NULL;
+        _fontsize--;
+    }
+    if (!_font) {
+        throw std::runtime_error("No font size that satisfies the requirements found");
+    }
+    TTF_SetFontStyle( _font, style );
+    font_map.emplace( FS, TTF_Font_Ptr( _font ) );
+
+    return _font;
 }
 
 int map_font_width() {
@@ -2135,24 +3497,35 @@ bool is_draw_tiles_mode() {
     return use_tiles;
 }
 
-SDL_Color cursesColorToSDL(int color) {
-    // Extract the color pair ID.
-    int pair = (color & 0x03fe0000) >> 17;
-    return windowsPalette[colorpairs[pair].FG];
+SDL_Color cursesColorToSDL( const nc_color &color ) {
+    const int pair_id = color.to_color_pair_index();
+    const auto pair = cata_cursesport::colorpairs[pair_id];
+
+    int palette_index = pair.FG != 0 ? pair.FG : pair.BG;
+
+    if( color.is_bold() ) {
+        palette_index += color_loader<SDL_Color>::COLOR_NAMES_COUNT / 2;
+    }
+
+    return windowsPalette[palette_index];
 }
 
 #ifdef SDL_SOUND
 
 void musicFinished();
 
-void play_music_file(std::string filename, int volume) {
+void play_music_file( const std::string &filename, int volume ) {
+    if( !check_sound( volume ) ) {
+        return;
+    }
+
     const std::string path = ( current_soundpack_path + "/" + filename );
     current_music = Mix_LoadMUS(path.c_str());
     if( current_music == nullptr ) {
         dbg( D_ERROR ) << "Failed to load audio file " << path << ": " << Mix_GetError();
         return;
     }
-    Mix_VolumeMusic(volume * OPTIONS["MUSIC_VOLUME"] / 100);
+    Mix_VolumeMusic( volume * get_option<int>( "MUSIC_VOLUME" ) / 100 );
     if( Mix_PlayMusic( current_music, 0 ) != 0 ) {
         dbg( D_ERROR ) << "Starting playlist " << path << " failed: " << Mix_GetError();
         return;
@@ -2223,8 +3596,61 @@ void play_music(std::string playlist) {
 #endif
 }
 
+void update_music_volume() {
 #ifdef SDL_SOUND
+    sounds::sound_enabled = ::get_option<bool>( "SOUND_ENABLED" );
+
+    if ( !check_sound() ) {
+        return;
+    }
+
+    Mix_VolumeMusic( get_option<int>( "MUSIC_VOLUME" ) );
+#endif
+}
+
+#ifdef SDL_SOUND
+static std::unordered_map<std::string, Mix_Chunk*> unique_chunks;
+
+// Allocate new Mix_Chunk as copy of input, sets ::allocated to 0 so copy's 
+// ::abuf is not freed during Mix_FreeChunk at EOL of struct sound_effect
+static Mix_Chunk* copy_chunk(const Mix_Chunk* ref){
+    // SDL_malloc to match up with Mix_FreeChunk's SDL_free call
+    // to free the Mix_Chunk object memory
+    Mix_Chunk *nchunk = (Mix_Chunk*)SDL_malloc(sizeof(Mix_Chunk));
+
+    // Assign as copy of ref
+    (*nchunk) = *ref;
+    // nchunk does not own ::abuf memory, set ::allocated to 0 to prevent
+    // deallocation
+    nchunk->allocated = 0;
+    return nchunk;
+}
+
+// Searches for path in loaded sfx resources.
+// - Found: Returns a copy of the Mix_Chunk loaded from path
+// - Not Found: Loads Resource and stores path and resource Mix_Chunk pointer
+static Mix_Chunk* load_chunk(const std::string& path){
+    Mix_Chunk *result = nullptr;
+
+    auto find_result = unique_chunks.find( path );
+    if ( find_result != unique_chunks.end() ){
+        result = copy_chunk( find_result->second );
+    } else{
+        result = Mix_LoadWAV( path.c_str() );
+        // Store only if valid
+        if ( result != nullptr ){
+            unique_chunks[path] = result;
+        }
+    }
+
+    return result;
+}
+
 void sfx::load_sound_effects( JsonObject &jsobj ) {
+    if ( !sound_init_success ) {
+        return;
+    }
+
     const id_and_variant key( jsobj.get_string( "id" ), jsobj.get_string( "variant", "default" ) );
     const int volume = jsobj.get_int( "volume", 100 );
     auto &effects = sound_effects_p[key];
@@ -2234,7 +3660,7 @@ void sfx::load_sound_effects( JsonObject &jsobj ) {
         sound_effect new_sound_effect;
         const std::string file = jsarr.next_string();
         std::string path = ( current_soundpack_path + "/" + file );
-        new_sound_effect.chunk.reset( Mix_LoadWAV( path.c_str() ) );
+        new_sound_effect.chunk.reset( load_chunk( path ) );
         if( !new_sound_effect.chunk ) {
             dbg( D_ERROR ) << "Failed to load audio file " << path << ": " << Mix_GetError();
             continue; // don't want empty chunks in the map
@@ -2247,6 +3673,10 @@ void sfx::load_sound_effects( JsonObject &jsobj ) {
 
 void sfx::load_playlist( JsonObject &jsobj )
 {
+    if( !sound_init_success ) {
+        return;
+    }
+
     JsonArray jarr = jsobj.get_array( "playlists" );
     while( jarr.has_more() ) {
         JsonObject playlist = jarr.next_object();
@@ -2274,12 +3704,9 @@ const sound_effect* find_random_effect( const id_and_variant &id_variants_pair )
     if( iter == sound_effects_p.end() ) {
         return nullptr;
     }
-    const auto &vector = iter->second;
-    if( vector.empty() ) {
-        return nullptr;
-    }
-    return &vector[rng( 0, vector.size() - 1 )];
+    return &random_entry_ref( iter->second );
 }
+
 // Same as above, but with fallback to "default" variant. May still return `nullptr`
 const sound_effect* find_random_effect( const std::string &id, const std::string& variant )
 {
@@ -2290,32 +3717,31 @@ const sound_effect* find_random_effect( const std::string &id, const std::string
     return find_random_effect( id_and_variant( id, "default" ) );
 }
 
-// Contains the chunks that have been dynamically created via do_pitch_shift. It is used to
-// distinguish between dynamically created chunks and static chunks (the later must not be freed).
-std::set<Mix_Chunk*> dynamic_chunks;
 // Deletes the dynamically created chunk (if such a chunk had been played).
-void cleanup_when_channel_finished( int channel )
+void cleanup_when_channel_finished( int /* channel */, void *udata )
 {
-    Mix_Chunk *chunk = Mix_GetChunk( channel );
-    const auto iter = dynamic_chunks.find( chunk );
-    if( iter != dynamic_chunks.end() ) {
-        dynamic_chunks.erase( iter );
-        free( chunk->abuf );
-        free( chunk );
-    }
+    Mix_Chunk *chunk = ( Mix_Chunk * )udata;
+    free( chunk->abuf );
+    free( chunk );
 }
 
-Mix_Chunk *do_pitch_shift( Mix_Chunk *s, float pitch ) {
+// empty effect, as we cannot change the size of the output buffer,
+// therefore we cannot do the math from do_pitch_shift here
+void empty_effect( int /* chan */, void * /* stream */, int /* len */, void * /* udata */ )
+{
+}
+
+Mix_Chunk *do_pitch_shift( Mix_Chunk *s, float pitch )
+{
     Mix_Chunk *result;
     Uint32 s_in = s->alen / 4;
     Uint32 s_out = ( Uint32 )( ( float )s_in * pitch );
     float pitch_real = ( float )s_out / ( float )s_in;
     Uint32 i, j;
     result = ( Mix_Chunk * )malloc( sizeof( Mix_Chunk ) );
-    dynamic_chunks.insert( result );
     result->allocated = 1;
     result->alen = s_out * 4;
-    result->abuf = ( Uint8* )malloc( result->alen * sizeof( Uint8 ) );
+    result->abuf = ( Uint8 * )malloc( result->alen * sizeof( Uint8 ) );
     result->volume = s->volume;
     for( i = 0; i < s_out; i++ ) {
         Sint16 lt;
@@ -2328,8 +3754,9 @@ Mix_Chunk *do_pitch_shift( Mix_Chunk *s, float pitch ) {
         Uint32 end = ( Uint32 )( ( float )( i + 1 ) / pitch_real );
 
         // check for boundary case
-        if( end > 0 && ( end >= ( s->alen / 4 ) ) )
+        if( end > 0 && ( end >= ( s->alen / 4 ) ) ) {
             end = begin;
+        }
 
         for( j = begin; j <= end; j++ ) {
             lt = ( s->abuf[( 4 * j ) + 1] << 8 ) | ( s->abuf[( 4 * j ) + 0] );
@@ -2339,59 +3766,62 @@ Mix_Chunk *do_pitch_shift( Mix_Chunk *s, float pitch ) {
         }
         lt_out = ( Sint16 )( ( float )lt_avg / ( float )( end - begin + 1 ) );
         rt_out = ( Sint16 )( ( float )rt_avg / ( float )( end - begin + 1 ) );
-        result->abuf[( 4 * i ) + 1] = ( lt_out >> 8 ) & 0xFF;
-        result->abuf[( 4 * i ) + 0] = lt_out & 0xFF;
-        result->abuf[( 4 * i ) + 3] = ( rt_out >> 8 ) & 0xFF;
-        result->abuf[( 4 * i ) + 2] = rt_out & 0xFF;
+        result->abuf[( 4 * i ) + 1] = ( Uint8 )( ( lt_out >> 8 ) & 0xFF );
+        result->abuf[( 4 * i ) + 0] = ( Uint8 )( lt_out & 0xFF );
+        result->abuf[( 4 * i ) + 3] = ( Uint8 )( ( rt_out >> 8 ) & 0xFF );
+        result->abuf[( 4 * i ) + 2] = ( Uint8 )( rt_out & 0xFF );
     }
     return result;
 }
 
-void sfx::play_variant_sound( std::string id, std::string variant, int volume ) {
-    if( volume == 0 ) {
+void sfx::play_variant_sound( const std::string &id, const std::string &variant, int volume )
+{
+    if( !check_sound( volume ) ) {
         return;
     }
 
-    const sound_effect* eff = find_random_effect( id, variant );
+    const sound_effect *eff = find_random_effect( id, variant );
     if( eff == nullptr ) {
         eff = find_random_effect( id, "default" );
         if( eff == nullptr ) {
             return;
         }
     }
-    const sound_effect& selected_sound_effect = *eff;
+    const sound_effect &selected_sound_effect = *eff;
 
     Mix_Chunk *effect_to_play = selected_sound_effect.chunk.get();
     Mix_VolumeChunk( effect_to_play,
-                     selected_sound_effect.volume * OPTIONS["SOUND_EFFECT_VOLUME"] * volume / ( 100 * 100 ) );
+                     selected_sound_effect.volume * get_option<int>( "SOUND_EFFECT_VOLUME" ) * volume / ( 100 * 100 ) );
     Mix_PlayChannel( -1, effect_to_play, 0 );
 }
 
-void sfx::play_variant_sound( std::string id, std::string variant, int volume, int angle,
-                              float pitch_min, float pitch_max ) {
-    if( volume == 0 ) {
+void sfx::play_variant_sound( const std::string &id, const std::string &variant, int volume,
+                              int angle,
+                              float pitch_min, float pitch_max )
+{
+    if( !check_sound( volume ) ) {
         return;
     }
 
-    const sound_effect* eff = find_random_effect( id, variant );
+    const sound_effect *eff = find_random_effect( id, variant );
     if( eff == nullptr ) {
         return;
     }
-    const sound_effect& selected_sound_effect = *eff;
+    const sound_effect &selected_sound_effect = *eff;
 
-    Mix_ChannelFinished( cleanup_when_channel_finished );
     Mix_Chunk *effect_to_play = selected_sound_effect.chunk.get();
     float pitch_random = rng_float( pitch_min, pitch_max );
     Mix_Chunk *shifted_effect = do_pitch_shift( effect_to_play, pitch_random );
     Mix_VolumeChunk( shifted_effect,
-                     selected_sound_effect.volume * OPTIONS["SOUND_EFFECT_VOLUME"] * volume / ( 100 * 100 ) );
+                     selected_sound_effect.volume * get_option<int>( "SOUND_EFFECT_VOLUME" ) * volume / ( 100 * 100 ) );
     int channel = Mix_PlayChannel( -1, shifted_effect, 0 );
+    Mix_RegisterEffect( channel, empty_effect, cleanup_when_channel_finished, shifted_effect );
     Mix_SetPosition( channel, angle, 1 );
 }
 
-void sfx::play_ambient_variant_sound( std::string id, std::string variant, int volume, int channel,
+void sfx::play_ambient_variant_sound( const std::string &id, const std::string &variant, int volume, int channel,
                                       int duration ) {
-    if( volume == 0 ) {
+    if( !check_sound( volume ) ) {
         return;
     }
 
@@ -2403,27 +3833,28 @@ void sfx::play_ambient_variant_sound( std::string id, std::string variant, int v
 
     Mix_Chunk *effect_to_play = selected_sound_effect.chunk.get();
     Mix_VolumeChunk( effect_to_play,
-                     selected_sound_effect.volume * OPTIONS["SOUND_EFFECT_VOLUME"] * volume / ( 100 * 100 ) );
+                     selected_sound_effect.volume * get_option<int>( "SOUND_EFFECT_VOLUME" ) * volume / ( 100 * 100 ) );
     if( Mix_FadeInChannel( channel, effect_to_play, -1, duration ) == -1 ) {
         dbg( D_ERROR ) << "Failed to play sound effect: " << Mix_GetError();
     }
 }
+
 #endif
 
 void load_soundset() {
 #ifdef SDL_SOUND
     const std::string default_path = FILENAMES["defaultsounddir"];
     const std::string default_soundpack = "basic";
-    std::string current_soundpack = OPTIONS["SOUNDPACKS"].getValue();
+    std::string current_soundpack = get_option<std::string>( "SOUNDPACKS" );
     std::string soundpack_path;
 
-    // Get curent soundpack and it's directory path.
+    // Get current soundpack and it's directory path.
     if (current_soundpack.empty()) {
-        dbg( D_ERROR ) << "Soundpack not set in OPTIONS. Corrupted options or empty soundpack name";
+        dbg( D_ERROR ) << "Soundpack not set in options or empty.";
         soundpack_path = default_path;
         current_soundpack = default_soundpack;
     } else {
-        dbg( D_INFO ) << "Current OPTIONS soundpack is: " << current_soundpack;
+        dbg( D_INFO ) << "Current soundpack is: " << current_soundpack;
         soundpack_path = SOUNDPACKS[current_soundpack];
     }
 
@@ -2437,10 +3868,17 @@ void load_soundset() {
 
     current_soundpack_path = soundpack_path;
     try {
-        DynamicDataLoader::get_instance().load_data_from_path( soundpack_path );
+        loading_ui ui( false );
+        DynamicDataLoader::get_instance().load_data_from_path( soundpack_path, "core", ui );
     } catch( const std::exception &err ) {
         dbg( D_ERROR ) << "failed to load sounds: " << err.what();
     }
+
+    unique_chunks.clear();
+    // Memory of unique_chunks no longer required, swap with locally scoped unordered_map
+    // to force deallocation of resources.
+    std::unordered_map<std::string, Mix_Chunk*> t_swap;
+    unique_chunks.swap(t_swap);
 #endif
 }
 

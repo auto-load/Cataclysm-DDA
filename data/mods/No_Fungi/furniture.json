@@ -2,10 +2,9 @@
     {
         "type" : "furniture",
         "id" : "f_flower_fungal",
-        "edit-mode" : "override",
         "name": "fungal flower",
         "symbol": "f",
-        "color": "dkgray",
+        "color": "dark_gray",
         "move_cost_mod": 1,
         "required_str": -1,
         "flags": ["TRANSPARENT", "FLOWER", "FUNGUS", "TINY", "FLAMMABLE_ASH"],
@@ -17,7 +16,6 @@
     },{
         "type" : "furniture",
         "id" : "f_flower_marloss",
-        "edit-mode" : "override",
         "name": "marloss flower",
         "symbol": "f",
         "color": "cyan",

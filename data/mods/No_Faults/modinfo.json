@@ -1,16 +1,20 @@
 [
   {
     "type": "MOD_INFO",
-    "mod-type": "SUPPLEMENTAL",
     "ident": "no_faults",
     "name": "Perfect Reliability",
-    "author": "Mugling",
+    "authors": [ "mugling" ],
+    "maintainers": [ "mugling" ],
     "description": "Vehicle parts are perfectly reliable and never spawn with faults or develop them during use",
     "category": "rebalance",
-    "path": "modinfo.json"
+    "dependencies": [ "dda" ],
+    "obsolete": true
   },
   {
-    "type": "WORLD_OPTION",
-    "options": [ "NO_FAULTS" ]
+    "type": "EXTERNAL_OPTION",
+    "name": "NO_FAULTS",
+    "info": "Disables vehicle part faults.  If true, disables vehicle part faults, vehicle parts will be totally reliable unless destroyed, and can only be repaired via replacement.",
+    "stype": "bool",
+    "value": true
   }
 ]

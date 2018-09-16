@@ -1,3 +1,4 @@
+#pragma once
 #ifndef UI_H
 #define UI_H
 
@@ -5,18 +6,32 @@
 #include <stdlib.h>
 #include "color.h"
 #include "cursesdef.h"
+#include "string_formatter.h"
+
+#include <vector>
+#include <string>
+#include <map>
+#include <utility>
+
 ////////////////////////////////////////////////////////////////////////////////////
-/*
+/**
  * uimenu constants
  */
-const int UIMENU_INVALID = -1024;
+const int UIMENU_INVALID = -1024; // legacy constant
+const int UIMENU_ERROR = -1024;
+const int UIMENU_WAIT_INPUT = -1025;
+const int UIMENU_UNBOUND = -1026;
+const int UIMENU_CANCEL = -1027;
 const int MENU_ALIGN_LEFT = -1;
 const int MENU_ALIGN_CENTER = 0;
 const int MENU_ALIGN_RIGHT = 1;
 const int MENU_WIDTH_ENTRIES = -2;
 const int MENU_AUTOASSIGN = -1;
 
-/*
+struct input_event;
+class input_context;
+
+/**
  * mvwzstr: line of text with horizontal offset and color
  */
 
@@ -27,15 +42,16 @@ struct mvwzstr {
     long sym = 0;
 };
 
-/*
+/**
  * uimenu_entry: entry line for uimenu
  */
 struct uimenu_entry {
-    int retval;           // return this int
-    bool enabled;         // darken, and forbid scrolling if hilight_disabled is false
-    int hotkey;           // keycode from (int)getch(). -1: automagically pick first free character: 1-9 a-z A-Z
-    std::string txt;      // what it says on the tin
-    std::string desc;     // optional, possibly longer, description
+    int retval;                 // return this int
+    bool enabled;               // darken, and forbid scrolling if hilight_disabled is false
+    bool force_color = false;   // Never darken this option
+    int hotkey;                 // keycode from (int)getch(). -1: automagically pick first free character: 1-9 a-z A-Z
+    std::string txt;            // what it says on the tin
+    std::string desc;           // optional, possibly longer, description
     nc_color hotkey_color;
     nc_color text_color;
     mvwzstr extratxt;
@@ -64,21 +80,24 @@ struct uimenu_entry {
         hotkey_color( H ), text_color( C ) {};
 };
 
-/*
+/**
  * Virtual base class for windowed ui stuff (like uimenu)
  */
 class ui_container
 {
     public:
+        virtual ~ui_container() = default;
+
+    public:
         int w_x;
         int w_y;
         int w_width;
         int w_height;
-        WINDOW *window;
+        catacurses::window window;
         virtual void refresh( bool refresh_children = true ) = 0;
 };
 
-/*
+/**
  * Generic multi-function callback for highlighted items, key presses, and window control. Example:
  *
  * class monmenu_cb: public uimenu_callback {
@@ -95,7 +114,7 @@ class ui_container
  * }
  * uimenu monmenu;
  * for( size_t i = 0; i < z.size(); ++i ) {
- *   monmenu.addentry("%s", z[i].name.c_str() );
+ *   monmenu.addentry( z[i].name );
  * }
  * monmenu_cb * cb;
  * cb->setptr( &g->z );
@@ -104,26 +123,34 @@ class ui_container
  *
  */
 class uimenu;
+/**
+* uimenu::query() handles most input events first,
+* and then passes the event to the callback if it can't handle it.
+*
+* The callback returninig a boolean false signifies that the callback can't "handle the
+* event completely". This is unchanged before or after the PR.
+* @{
+*/
 class uimenu_callback
 {
     public:
-        void *myptr;
-        void setptr( void *ptr ) {
-            myptr = ptr;
-        }
         virtual void select( int /*entnum*/, uimenu * ) {};
-        virtual bool key( int /*key*/, int /*entnum*/, uimenu * ) {
+        virtual bool key( const input_context &, const input_event &/*key*/, int /*entnum*/,
+                          uimenu * ) {
             return false;
         };
         virtual void refresh( uimenu * ) {};
         virtual void redraw( uimenu * ) {};
-        virtual ~uimenu_callback() {};
+        virtual ~uimenu_callback() = default;
 };
-/*
+/*@}*/
+/**
  * uimenu: scrolling vertical list menu
  */
 class ui_element;
 class ui_element_input;
+
+// This class should be migrated out, use uilist instead!
 class uimenu: public ui_container
 {
     public:
@@ -132,6 +159,8 @@ class uimenu: public ui_container
         int keypress;
         std::string text;
         std::vector<std::string> textformatted;
+        std::string input_category;
+        std::vector< std::pair<std::string, std::string> > additional_actions;
         int textwidth;
         int textalign;
         int max_entry_len;
@@ -152,7 +181,10 @@ class uimenu: public ui_container
         nc_color disabled_color;
         int pad_left;
         int pad_right;
-        bool return_invalid;
+        bool allow_disabled; // return on selecting disabled entry, default false
+        bool allow_anykey; // return UIMENU_UNBOUND on keys unbound & unhandled by callback, default false
+        bool allow_cancel; // return UIMENU_CANCEL on "QUIT" action, default true
+        bool return_invalid; // legacy flag
         bool hilight_disabled;
         bool hilight_full;
         int shift_retval;
@@ -184,7 +216,9 @@ class uimenu: public ui_container
         void init();
         void setup();
         void show();
-        bool scrollby( int scrollby = 0, const int key = 0 );
+        bool scrollby( int scrollby );
+        int scroll_amount_from_key( const int key );
+        int scroll_amount_from_action( const std::string &action );
         void query( bool loop = true );
         void filterlist();
         void apply_scrollbar();
@@ -192,16 +226,19 @@ class uimenu: public ui_container
         void refresh( bool refresh_callback = true ) override;
         void redraw( bool redraw_callback = true );
         void addentry( std::string str );
-        void addentry( const char *format, ... );
         void addentry( int r, bool e, int k, std::string str );
-        void addentry( int r, bool e, int k, const char *format, ... );
+        // K is templated so it matches a `char` literal and a `long` value.
+        // Using a fixed type (either `char` or `long`) will lead to ambiguity with the
+        // other overload when called with the wrong type.
+        template<typename K, typename ...Args>
+        void addentry( const int r, const bool e, K k, const char *const format, Args &&... args ) {
+            return addentry( r, e, k, string_format( format, std::forward<Args>( args )... ) );
+        }
         void addentry_desc( std::string str, std::string desc );
         void addentry_desc( int r, bool e, int k, std::string str, std::string desc );
         void settext( std::string str );
-        void settext( const char *format, ... );
 
         void reset();
-        ~uimenu();
 
         operator int() const;
 
@@ -209,13 +246,32 @@ class uimenu: public ui_container
 
     private:
         bool started;
-        int last_fsize;
-        int last_vshift;
+
+    protected:
         std::string hotkeys;
 };
 
-// Callback for uimenu that pairs menu entries with points
-// When an entry is selected, view will be centered on the paired point
+class uilist : virtual public uimenu
+{
+    public:
+        uilist();
+        uilist( const std::string &hotkeys_override );
+        // query() will be called at the end of these convenience constructors
+        uilist( const std::string &msg, const std::vector<uimenu_entry> &opts );
+        uilist( const std::string &msg, const std::vector<std::string> &opts );
+        uilist( const std::string &msg, std::initializer_list<char const *const> opts );
+        uilist( int startx, int width, int starty, const std::string &msg,
+                const std::vector<uimenu_entry> &opts );
+        uilist( int startx, int width, int starty, const std::string &msg,
+                const std::vector<std::string> &opts );
+        uilist( int startx, int width, int starty, const std::string &msg,
+                std::initializer_list<char const *const> opts );
+};
+
+/**
+ * Callback for uimenu that pairs menu entries with points
+ * When an entry is selected, view will be centered on the paired point
+ */
 class pointmenu_cb : public uimenu_callback
 {
     private:
@@ -224,7 +280,7 @@ class pointmenu_cb : public uimenu_callback
         tripoint last_view; // to reposition the view after selecting
     public:
         pointmenu_cb( const std::vector< tripoint > &pts );
-        ~pointmenu_cb() override { };
+        ~pointmenu_cb() override = default;
         void select( int num, uimenu *menu ) override;
         void refresh( uimenu *menu ) override;
 };

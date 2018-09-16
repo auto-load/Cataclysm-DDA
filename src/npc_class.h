@@ -1,3 +1,4 @@
+#pragma once
 #ifndef NPC_CLASS_H
 #define NPC_CLASS_H
 
@@ -9,12 +10,29 @@
 
 #include "string_id.h"
 
-class npc_class;
-using npc_class_id = string_id<npc_class>;
 class JsonObject;
 
-/** Wrapper class for  */
-// @todo Move to better suited file (rng.h/.cpp?)
+class npc_class;
+using npc_class_id = string_id<npc_class>;
+
+class Skill;
+using skill_id = string_id<Skill>;
+
+struct mutation_branch;
+using trait_id = string_id<mutation_branch>;
+
+typedef std::string Group_tag;
+typedef std::string Mutation_category_tag;
+
+class Trait_group;
+namespace trait_group
+{
+
+typedef string_id<Trait_group> Trait_group_tag;
+
+}
+
+// @todo: Move to better suited file (rng.h/.cpp?)
 class distribution
 {
     private:
@@ -27,6 +45,8 @@ class distribution
         float roll() const;
 
         distribution operator+( const distribution &other ) const;
+        distribution operator*( const distribution &other ) const;
+        distribution &operator=( const distribution &other );
 
         static distribution constant( float val );
         static distribution rng_roll( int from, int to );
@@ -40,16 +60,29 @@ class npc_class
         std::string name;
         std::string job_description;
 
-        bool common;
+        bool common = true;
 
         distribution bonus_str;
         distribution bonus_dex;
         distribution bonus_int;
         distribution bonus_per;
 
+        std::map<skill_id, distribution> skills;
+        // Just for finalization
+        std::map<skill_id, distribution> bonus_skills;
+
+        Group_tag shopkeeper_item_group = "EMPTY_GROUP";
+
     public:
         npc_class_id id;
-        bool was_loaded;
+        bool was_loaded = false;
+
+        Group_tag worn_override;
+        Group_tag carry_override;
+        Group_tag weapon_override;
+
+        std::map<Mutation_category_tag, distribution> mutation_rounds;
+        trait_group::Trait_group_tag traits = trait_group::Trait_group_tag( "EMPTY_GROUP" );
 
         npc_class();
 
@@ -61,22 +94,28 @@ class npc_class
         int roll_intelligence() const;
         int roll_perception() const;
 
-        void load( JsonObject &jo );
+        int roll_skill( const skill_id & ) const;
+
+        const Group_tag &get_shopkeeper_items() const;
+
+        void load( JsonObject &jo, const std::string &src );
 
         static const npc_class_id &from_legacy_int( int i );
 
         static const npc_class_id &random_common();
 
-        static void load_npc_class( JsonObject &jo );
+        static void load_npc_class( JsonObject &jo, const std::string &src );
 
         static const std::vector<npc_class> &get_all();
 
         static void reset_npc_classes();
 
+        static void finalize_all();
+
         static void check_consistency();
 };
 
-// @todo Get rid of that
+// @todo: Get rid of that
 extern npc_class_id NC_NONE;
 extern npc_class_id NC_EVAC_SHOPKEEP;
 extern npc_class_id NC_SHOPKEEP;

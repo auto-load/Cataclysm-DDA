@@ -1,7 +1,11 @@
 #include "npc_class.h"
+#include "skill.h"
 #include "debug.h"
 #include "rng.h"
 #include "generic_factory.h"
+#include "item_group.h"
+#include "mutation.h"
+#include "trait_group.h"
 
 #include <list>
 
@@ -18,9 +22,9 @@ static const std::array<npc_class_id, 17> legacy_ids = {{
         npc_class_id( "NC_BOUNTY_HUNTER" ),  // Resourceful and well-armored
         npc_class_id( "NC_THUG" ),           // Moderate melee skills and poor equipment
         npc_class_id( "NC_SCAVENGER" ),      // Good with pistols light weapons
-        npc_class_id( "NC_ARSONIST" ),       // Evacuation Center, restocks moltovs and anarcist type stuff
+        npc_class_id( "NC_ARSONIST" ),       // Evacuation Center, restocks Molotovs and anarchist type stuff
         npc_class_id( "NC_HUNTER" ),         // Survivor type good with bow or rifle
-        npc_class_id( "NC_SOLDIER" ),        // Well equiped and trained combatant, good with rifles and melee
+        npc_class_id( "NC_SOLDIER" ),        // Well equipped and trained combatant, good with rifles and melee
         npc_class_id( "NC_BARTENDER" ),      // Stocks alcohol
         npc_class_id( "NC_JUNK_SHOPKEEP" )   // Stocks wide range of items...
     }
@@ -46,15 +50,14 @@ npc_class_id NC_JUNK_SHOPKEEP( "NC_JUNK_SHOPKEEP" );
 
 generic_factory<npc_class> npc_class_factory( "npc_class" );
 
-template<>
-const npc_class_id string_id<npc_class>::NULL_ID( "NC_NONE" );
-
+/** @relates string_id */
 template<>
 const npc_class &string_id<npc_class>::obj() const
 {
     return npc_class_factory.obj( *this );
 }
 
+/** @relates string_id */
 template<>
 bool string_id<npc_class>::is_valid() const
 {
@@ -65,9 +68,9 @@ npc_class::npc_class() : id( NC_NONE )
 {
 }
 
-void npc_class::load_npc_class( JsonObject &jo )
+void npc_class::load_npc_class( JsonObject &jo, const std::string &src )
 {
-    npc_class_factory.load( jo );
+    npc_class_factory.load( jo, src );
 }
 
 void npc_class::reset_npc_classes()
@@ -75,11 +78,76 @@ void npc_class::reset_npc_classes()
     npc_class_factory.reset();
 }
 
+// Copies the value under the key "ALL" to all unassigned skills
+template <typename T>
+void apply_all_to_unassigned( T &skills )
+{
+    auto iter = std::find_if( skills.begin(), skills.end(),
+    []( decltype( *begin( skills ) ) &pr ) {
+        return pr.first == "ALL";
+    } );
+
+    if( iter != skills.end() ) {
+        distribution dis = iter->second;
+        skills.erase( iter );
+        for( const auto &sk : Skill::skills ) {
+            if( skills.count( sk.ident() ) == 0 ) {
+                skills[ sk.ident() ] = dis;
+            }
+        }
+    }
+}
+
+void npc_class::finalize_all()
+{
+    for( auto &cl_const : npc_class_factory.get_all() ) {
+        auto &cl = const_cast<npc_class &>( cl_const );
+        apply_all_to_unassigned( cl.skills );
+        apply_all_to_unassigned( cl.bonus_skills );
+
+        for( const auto &pr : cl.bonus_skills ) {
+            if( cl.skills.count( pr.first ) == 0 ) {
+                cl.skills[ pr.first ] = pr.second;
+            } else {
+                cl.skills[ pr.first ] = cl.skills[ pr.first ] + pr.second;
+            }
+        }
+    }
+}
+
 void npc_class::check_consistency()
 {
     for( const auto &legacy : legacy_ids ) {
         if( !npc_class_factory.is_valid( legacy ) ) {
             debugmsg( "Missing legacy npc class %s", legacy.c_str() );
+        }
+    }
+
+    for( auto &cl : npc_class_factory.get_all() ) {
+        if( !item_group::group_is_defined( cl.shopkeeper_item_group ) ) {
+            debugmsg( "Missing shopkeeper item group %s", cl.shopkeeper_item_group.c_str() );
+        }
+
+        if( !cl.worn_override.empty() && !item_group::group_is_defined( cl.worn_override ) ) {
+            debugmsg( "Missing worn override item group %s", cl.worn_override.c_str() );
+        }
+
+        if( !cl.carry_override.empty() && !item_group::group_is_defined( cl.carry_override ) ) {
+            debugmsg( "Missing carry override item group %s", cl.carry_override.c_str() );
+        }
+
+        if( !cl.weapon_override.empty() && !item_group::group_is_defined( cl.weapon_override ) ) {
+            debugmsg( "Missing weapon override item group %s", cl.weapon_override.c_str() );
+        }
+
+        for( const auto &pr : cl.skills ) {
+            if( !pr.first.is_valid() ) {
+                debugmsg( "Invalid skill %s", pr.first.c_str() );
+            }
+        }
+
+        if( !cl.traits.is_valid() ) {
+            debugmsg( "Trait group %s is undefined", cl.traits.c_str() );
         }
     }
 }
@@ -116,6 +184,18 @@ distribution load_distribution( JsonObject &jo )
         return ret;
     }
 
+    if( jo.has_array( "mul" ) ) {
+        JsonArray jarr = jo.get_array( "mul" );
+        JsonObject obj = jarr.next_object();
+        distribution ret = load_distribution( obj );
+        while( jarr.has_more() ) {
+            obj = jarr.next_object();
+            ret = ret * load_distribution( obj );
+        }
+
+        return ret;
+    }
+
     jo.throw_error( "Invalid distribution" );
     return distribution();
 }
@@ -139,7 +219,7 @@ distribution load_distribution( JsonObject &jo, const std::string &name )
     return distribution();
 }
 
-void npc_class::load( JsonObject &jo )
+void npc_class::load( JsonObject &jo, const std::string & )
 {
     mandatory( jo, was_loaded, "name", name, translated_string_reader );
     mandatory( jo, was_loaded, "job_description", job_description, translated_string_reader );
@@ -149,13 +229,65 @@ void npc_class::load( JsonObject &jo )
     bonus_dex = load_distribution( jo, "bonus_dex" );
     bonus_int = load_distribution( jo, "bonus_int" );
     bonus_per = load_distribution( jo, "bonus_per" );
+
+    optional( jo, was_loaded, "shopkeeper_item_group", shopkeeper_item_group, "EMPTY_GROUP" );
+    optional( jo, was_loaded, "worn_override", worn_override );
+    optional( jo, was_loaded, "carry_override", carry_override );
+    optional( jo, was_loaded, "weapon_override", weapon_override );
+
+    if( jo.has_array( "traits" ) ) {
+        traits = trait_group::load_trait_group( *jo.get_raw( "traits" ), "collection" );
+    }
+
+    /* Mutation rounds can be specified as follows:
+     *   "mutation_rounds": {
+     *     "ANY" : { "constant": 1 },
+     *     "INSECT" : { "rng": [1, 3] }
+     *   }
+     */
+    if( jo.has_object( "mutation_rounds" ) ) {
+        const std::map<std::string, mutation_category_trait> &mutation_categories =
+            mutation_category_trait::get_all();
+        auto jo2 = jo.get_object( "mutation_rounds" );
+        for( auto &mutation : jo2.get_member_names() ) {
+            auto category_match = [&mutation]( std::pair<const std::string, mutation_category_trait> p ) {
+                return p.second.id == mutation;
+            };
+            if( std::find_if( mutation_categories.begin(), mutation_categories.end(),
+                              category_match ) == mutation_categories.end() ) {
+                debugmsg( "Unrecognized mutation category %s", mutation );
+                continue;
+            }
+            auto distrib = jo2.get_object( mutation );
+            mutation_rounds[mutation] = load_distribution( distrib );
+        }
+    }
+
+    if( jo.has_array( "skills" ) ) {
+        JsonArray jarr = jo.get_array( "skills" );
+        while( jarr.has_more() ) {
+            JsonObject skill_obj = jarr.next_object();
+            auto skill_ids = skill_obj.get_tags( "skill" );
+            if( skill_obj.has_object( "level" ) ) {
+                distribution dis = load_distribution( skill_obj, "level" );
+                for( const auto &sid : skill_ids ) {
+                    skills[ skill_id( sid ) ] = dis;
+                }
+            } else {
+                distribution dis = load_distribution( skill_obj, "bonus" );
+                for( const auto &sid : skill_ids ) {
+                    bonus_skills[ skill_id( sid ) ] = dis;
+                }
+            }
+        }
+    }
 }
 
 const npc_class_id &npc_class::from_legacy_int( int i )
 {
     if( i < 0 || ( size_t )i >= legacy_ids.size() ) {
         debugmsg( "Invalid legacy class id: %d", i );
-        return NULL_ID;
+        return npc_class_id::NULL_ID();
     }
 
     return legacy_ids[ i ];
@@ -192,6 +324,11 @@ const std::string &npc_class::get_job_description() const
     return job_description;
 }
 
+const Group_tag &npc_class::get_shopkeeper_items() const
+{
+    return shopkeeper_item_group;
+}
+
 int npc_class::roll_strength() const
 {
     return dice( 4, 3 ) + bonus_str.roll();
@@ -210,6 +347,16 @@ int npc_class::roll_intelligence() const
 int npc_class::roll_perception() const
 {
     return dice( 4, 3 ) + bonus_per.roll();
+}
+
+int npc_class::roll_skill( const skill_id &sid ) const
+{
+    const auto &iter = skills.find( sid );
+    if( iter == skills.end() ) {
+        return 0;
+    }
+
+    return std::max<int>( 0, iter->second.roll() );
 }
 
 distribution::distribution()
@@ -274,4 +421,19 @@ distribution distribution::operator+( const distribution &other ) const
     return distribution( [my_fun, other_fun]() {
         return my_fun() + other_fun();
     } );
+}
+
+distribution distribution::operator*( const distribution &other ) const
+{
+    auto my_fun = generator_function;
+    auto other_fun = other.generator_function;
+    return distribution( [my_fun, other_fun]() {
+        return my_fun() * other_fun();
+    } );
+}
+
+distribution &distribution::operator=( const distribution &other )
+{
+    generator_function = other.generator_function;
+    return *this;
 }

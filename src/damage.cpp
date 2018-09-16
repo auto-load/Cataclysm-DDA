@@ -1,22 +1,26 @@
+#include "damage.h"
 #include "item.h"
 #include "monster.h"
-#include "game.h"
-#include "map.h"
-#include "damage.h"
-#include "rng.h"
 #include "debug.h"
 #include "map_iterator.h"
-#include "field.h"
 #include "mtype.h"
 #include "json.h"
-#include "itype.h"
 
 #include <map>
 #include <algorithm>
 #include <numeric>
 
+bool damage_unit::operator==( const damage_unit &other ) const
+{
+    return type == other.type &&
+           amount == other.amount &&
+           res_pen == other.res_pen &&
+           res_mult == other.res_mult &&
+           damage_multiplier == other.damage_multiplier;
+}
+
 damage_instance::damage_instance() { }
-damage_instance damage_instance::physical( float bash, float cut, float stab, int arpen )
+damage_instance damage_instance::physical( float bash, float cut, float stab, float arpen )
 {
     damage_instance d;
     d.add_damage( DT_BASH, bash, arpen );
@@ -24,21 +28,31 @@ damage_instance damage_instance::physical( float bash, float cut, float stab, in
     d.add_damage( DT_STAB, stab, arpen );
     return d;
 }
-damage_instance::damage_instance( damage_type dt, float a, int rp, float rm, float mul )
+damage_instance::damage_instance( damage_type dt, float a, float rp, float rm, float mul )
 {
     add_damage( dt, a, rp, rm, mul );
 }
 
-void damage_instance::add_damage( damage_type dt, float a, int rp, float rm, float mul )
+void damage_instance::add_damage( damage_type dt, float a, float rp, float rm, float mul )
 {
     damage_unit du( dt, a, rp, rm, mul );
-    damage_units.push_back( du );
+    add( du );
 }
 
-void damage_instance::mult_damage( double multiplier )
+void damage_instance::mult_damage( double multiplier, bool pre_armor )
 {
-    for( auto &elem : damage_units ) {
-        elem.damage_multiplier *= multiplier;
+    if( multiplier <= 0.0 ) {
+        clear();
+    }
+
+    if( pre_armor ) {
+        for( auto &elem : damage_units ) {
+            elem.amount *= multiplier;
+        }
+    } else {
+        for( auto &elem : damage_units ) {
+            elem.damage_multiplier *= multiplier;
+        }
     }
 }
 float damage_instance::type_damage( damage_type dt ) const
@@ -63,6 +77,69 @@ float damage_instance::total_damage() const
 void damage_instance::clear()
 {
     damage_units.clear();
+}
+
+bool damage_instance::empty() const
+{
+    return damage_units.empty();
+}
+
+void damage_instance::add( const damage_instance &b )
+{
+    for( auto &added_du : b.damage_units ) {
+        add( added_du );
+    }
+}
+
+void damage_instance::add( const damage_unit &added_du )
+{
+    auto iter = std::find_if( damage_units.begin(), damage_units.end(),
+    [&added_du]( const damage_unit & du ) {
+        return du.type == added_du.type;
+    } );
+    if( iter == damage_units.end() ) {
+        damage_units.emplace_back( added_du );
+    } else {
+        damage_unit &du = *iter;
+        float mult = added_du.damage_multiplier / du.damage_multiplier;
+        du.amount += added_du.amount * mult;
+        du.res_pen += added_du.res_pen * mult;
+        // Linearly interpolate armor multiplier based on damage proportion contributed
+        float t = added_du.damage_multiplier / ( added_du.damage_multiplier + du.damage_multiplier );
+        du.res_mult = lerp( du.res_mult, added_du.damage_multiplier, t );
+    }
+}
+
+std::vector<damage_unit>::iterator damage_instance::begin()
+{
+    return damage_units.begin();
+}
+
+std::vector<damage_unit>::const_iterator damage_instance::begin() const
+{
+    return damage_units.begin();
+}
+
+std::vector<damage_unit>::iterator damage_instance::end()
+{
+    return damage_units.end();
+}
+
+std::vector<damage_unit>::const_iterator damage_instance::end() const
+{
+    return damage_units.end();
+}
+
+bool damage_instance::operator==( const damage_instance &other ) const
+{
+    return damage_units == other.damage_units;
+}
+
+void damage_instance::deserialize( JsonIn &jsin )
+{
+    JsonObject jo( jsin );
+    // @todo Clean up
+    damage_units = load_damage_instance( jo ).damage_units;
 }
 
 dealt_damage_instance::dealt_damage_instance()
@@ -92,13 +169,12 @@ int dealt_damage_instance::total_damage() const
     return std::accumulate( dealt_dams.begin(), dealt_dams.end(), 0 );
 }
 
-
 resistances::resistances()
 {
     resist_vals.fill( 0 );
 }
 
-resistances::resistances( item &armor, bool to_self )
+resistances::resistances( const item &armor, bool to_self )
 {
     // Armors protect, but all items can resist
     if( to_self || armor.is_armor() ) {
@@ -171,6 +247,27 @@ const std::string &name_by_dt( const damage_type &dt )
     }
     static const std::string err_msg( "dt_not_found" );
     return err_msg;
+}
+
+const skill_id &skill_by_dt( damage_type dt )
+{
+    static skill_id skill_bashing( "bashing" );
+    static skill_id skill_cutting( "cutting" );
+    static skill_id skill_stabbing( "stabbing" );
+
+    switch( dt ) {
+        case DT_BASH:
+            return skill_bashing;
+
+        case DT_CUT:
+            return skill_cutting;
+
+        case DT_STAB:
+            return skill_stabbing;
+
+        default:
+            return skill_id::NULL_ID();
+    }
 }
 
 damage_unit load_damage_unit( JsonObject &curr )

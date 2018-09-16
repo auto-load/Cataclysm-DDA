@@ -24,7 +24,8 @@
         "msg": "You turn the lamp on.",
         "need_charges": 1,
         "need_charges_msg": "The lantern has no batteries."
-    }
+    },
+    "flags": [ "RADIO_MODABLE", "ALLOWS_REMOTE_USE" ]
   },
   {
     "id": "electric_lantern_on",
@@ -33,14 +34,14 @@
     "name": "electric lantern (on)",
     "name_plural": "electric lanterns (on)",
     "turns_per_charge": 45,
-    "ammo": "battery",
     "revert_to": "electric_lantern",
     "use_action": {
+        "menu_text": "Turn off",
         "type": "transform",
         "target": "electric_lantern",
-        "msg": "The lantern is extinguished."
+        "msg": "You turn the lamp off."
     },
-    "flags": [ "LIGHT_15", "TRADER_AVOID" ]
+    "flags": [ "RADIO_MODABLE", "LIGHT_15", "TRADER_AVOID", "ALLOWS_REMOTE_USE" ]
   },
   {
     "id": "flashlight",
@@ -76,11 +77,46 @@
     "turns_per_charge": 20,
     "revert_to": "flashlight",
     "use_action": {
+        "menu_text": "Turn off",
         "type": "transform",
         "msg": "You turn the flashlight off.",
         "target": "flashlight"
     },
     "flags": [ "LIGHT_300", "CHARGEDIM", "TRADER_AVOID" ]
+  },
+  {
+    "id": "handflare",
+    "type": "TOOL",
+    "name": "flare",
+    "description": "This is a slow-burning magnesium flare.  Use it to strike the striker and light it.  It will produce a bright light for about a half hour.",
+    "material": [ "plastic", "powder" ],
+    "symbol": ";",
+    "color": "light_red",
+    "weight": 128,
+    "volume": 1,
+    "price": 400,
+    "max_charges": 300,
+    "initial_charges": 300,
+    "use_action": {
+        "menu_text": "Strike the striker",
+        "type": "transform",
+        "target": "handflare_lit",
+        "active": true,
+        "msg": "You strike your flare and light it."
+    }
+  },
+  {
+    "id": "handflare_lit",
+    "copy-from": "handflare",
+    "type": "TOOL",
+    "name": "active flare",
+    "description": "This burning magnesium flare is producing light.  It will last for about a half hour before burning out.",
+    "color": "white",
+    "turns_per_charge": 1,
+    "revert_to": "handflare_dead",
+    "revert_msg": "The flare sputters out",
+    "use_action": [],
+    "flags": [ "FIRE", "LIGHT_240", "CHARGEDIM", "FLAMING", "TRADER_AVOID" ]
   },
   {
     "id": "heavy_flashlight",
@@ -118,6 +154,7 @@
     "turns_per_charge": 12,
     "revert_to": "heavy_flashlight",
     "use_action": {
+        "menu_text": "Turn off",
         "type": "transform",
         "msg": "You turn the heavy duty flashlight off.",
         "target": "heavy_flashlight"
@@ -129,7 +166,7 @@
     "type": "TOOL",
     "name": "acetylene lamp (off)",
     "name_plural": "acetylene lamps (off)",
-    "description": "An antique brass lamp designed to run from a pressurised cylinder of acetylene.  It is an efficient, if not somewhat dangerous light source.",
+    "description": "An antique brass lamp designed to run from a pressurized cylinder of acetylene.  It is an efficient, if not somewhat dangerous light source.",
     "weight": 800,
     "volume": 2,
     "price": 6500,
@@ -159,8 +196,8 @@
     "turns_per_charge": 240,
     "revert_to": "oxylamp",
     "use_action": {
+        "menu_text": "Turn off",
         "type": "transform",
-        "menu_option_text": "Turn off",
         "msg": "The %s is extinguished",
         "target": "oxylamp"
     },
