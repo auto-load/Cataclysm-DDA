@@ -257,7 +257,10 @@ ifdef RELEASE
   CXXFLAGS += $(OPTLEVEL)
 
   ifdef LTO
-    LDFLAGS += -fuse-ld=gold
+    ifneq ($(OS),Darwin)
+      # gold is an ELF-only linker
+      LDFLAGS += -fuse-ld=gold
+    endif
     ifdef CLANG
       LTOFLAGS += -flto
     else
