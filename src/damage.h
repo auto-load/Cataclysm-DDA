@@ -1,23 +1,24 @@
+#pragma once
 #ifndef DAMAGE_H
 #define DAMAGE_H
 
 #include "enums.h"
-#include "bodypart.h"
-#include "color.h"
+#include "string_id.h"
+#include <array>
 #include <string>
 #include <vector>
 #include <set>
-#include <algorithm>
-#include <numeric>
 #include <memory>
 
-struct itype;
-struct tripoint;
-struct explosion_data;
 class item;
 class monster;
-class Creature;
 class JsonObject;
+class JsonArray;
+
+class Skill;
+using skill_id = string_id<Skill>;
+
+enum body_part : int;
 
 enum damage_type : int {
     DT_NULL = 0, // null damage, doesn't exist
@@ -36,107 +37,88 @@ enum damage_type : int {
 struct damage_unit {
     damage_type type;
     float amount;
-    int res_pen;
+    float res_pen;
     float res_mult;
     float damage_multiplier;
 
-    damage_unit( damage_type dt, float a, int rp, float rm, float mul ) :
+    damage_unit( damage_type dt, float a, float rp = 0.0f, float rm = 1.0f, float mul = 1.0f ) :
         type( dt ), amount( a ), res_pen( rp ), res_mult( rm ), damage_multiplier( mul ) { }
-};
 
+    bool operator==( const damage_unit &other ) const;
+};
 
 // a single atomic unit of damage from an attack. Can include multiple types
 // of damage at different armor mitigation/penetration values
 struct damage_instance {
     std::vector<damage_unit> damage_units;
-    std::set<std::string> effects;
     damage_instance();
-    static damage_instance physical( float bash, float cut, float stab, int arpen = 0 );
-    void add_damage( damage_type dt, float a, int rp = 0, float rm = 1.0f, float mul = 1.0f );
-    damage_instance( damage_type dt, float a, int rp = 0, float rm = 1.0f, float mul = 1.0f );
-    void add_effect( std::string effect );
-    void mult_damage( double multiplier );
+    static damage_instance physical( float bash, float cut, float stab, float arpen = 0.0f );
+    damage_instance( damage_type dt, float a, float rp = 0.0f, float rm = 1.0f, float mul = 1.0f );
+    void mult_damage( double multiplier, bool pre_armor = false );
     float type_damage( damage_type dt ) const;
     float total_damage() const;
     void clear();
+    bool empty() const;
+
+    std::vector<damage_unit>::iterator begin();
+    std::vector<damage_unit>::const_iterator begin() const;
+    std::vector<damage_unit>::iterator end();
+    std::vector<damage_unit>::const_iterator end() const;
+
+    bool operator==( const damage_instance &other ) const;
+
+    /**
+     * Adds damage to the instance.
+     * If the damage type already exists in the instance, the old and new instance are normalized.
+     * The normalization means that the effective damage can actually decrease (depending on target's armor).
+     */
+    /*@{*/
+    void add_damage( damage_type dt, float a, float rp = 0.0f, float rm = 1.0f, float mul = 1.0f );
+    void add( const damage_instance &b );
+    void add( const damage_unit &b );
+    /*@}*/
+
+    void deserialize( JsonIn & );
 };
 
 struct dealt_damage_instance {
-    std::vector<int> dealt_dams;
+    std::array<int, NUM_DT> dealt_dams;
     body_part bp_hit;
 
     dealt_damage_instance();
-    dealt_damage_instance( std::vector<int> &dealt );
     void set_damage( damage_type dt, int amount );
     int type_damage( damage_type dt ) const;
     int total_damage() const;
 };
 
 struct resistances {
-    std::vector<int> resist_vals;
+    std::array<float, NUM_DT> resist_vals;
 
     resistances();
 
     // If to_self is true, we want armor's own resistance, not one it provides to wearer
-    resistances( item &armor, bool to_self = false );
+    resistances( const item &armor, bool to_self = false );
     resistances( monster &monster );
-    void set_resist( damage_type dt, int amount );
-    int type_resist( damage_type dt ) const;
+    void set_resist( damage_type dt, float amount );
+    float type_resist( damage_type dt ) const;
 
     float get_effective_resist( const damage_unit &du ) const;
+
+    resistances &operator+=( const resistances &other );
 };
-
-struct projectile {
-        damage_instance impact;
-        // how hard is it to dodge? essentially rolls to-hit,
-        // bullets have arbitrarily high values but thrown objects have dodgeable values.
-        int speed;
-        int range;
-
-        std::set<std::string> proj_effects;
-
-        /**
-         * Returns an item that should be dropped or an item for which is_null() is true
-         *  when item to drop is unset.
-         */
-        const item &get_drop() const;
-        /** Copies item `it` as a drop for this projectile. */
-        void set_drop( const item &it );
-        void set_drop( item &&it );
-        void unset_drop();
-
-        const explosion_data &get_custom_explosion() const;
-        void set_custom_explosion( const explosion_data &ex );
-        void unset_custom_explosion();
-
-        projectile();
-        projectile( const projectile & );
-        projectile( projectile && ) = default;
-        projectile &operator=( const projectile & );
-        ~projectile();
-
-    private:
-        // Actual item used (to drop contents etc.).
-        // Null in case of bullets (they aren't "made of cartridges").
-        std::unique_ptr<item> drop;
-        std::unique_ptr<explosion_data> custom_explosion;
-};
-
-struct dealt_projectile_attack {
-    projectile proj; // What we used to deal the attack
-    Creature *hit_critter; // The critter that stopped the projectile or null
-    dealt_damage_instance dealt_dam; // If hit_critter isn't null, hit data is written here
-    tripoint end_point; // Last hit tile (is hit_critter is null, drops should spawn here)
-    double missed_by; // Accuracy of dealt attack
-};
-
-void apply_ammo_effects( const tripoint &p, const std::set<std::string> &effects );
-int aoe_size( const std::set<std::string> &effects );
 
 damage_type dt_by_name( const std::string &name );
 const std::string &name_by_dt( const damage_type &dt );
 
+const skill_id &skill_by_dt( damage_type dt );
+
 damage_instance load_damage_instance( JsonObject &jo );
 damage_instance load_damage_instance( JsonArray &jarr );
+
+resistances load_resistances_instance( JsonObject &jo );
+
+// Returns damage or resistance data
+// Handles some shorthands
+std::array<float, NUM_DT> load_damage_array( JsonObject &jo );
 
 #endif

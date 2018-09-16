@@ -10,9 +10,7 @@
     "material": ["aluminum", "plastic"],
     "weight": 100,
     "volume": 0,
-    "bashing": 0,
-    "category" : "spare_parts",
-    "use_action": "NONE"
+    "category" : "spare_parts"
   },{
     "id" : "blob_dormant",
     "type": "TOOL",
@@ -24,7 +22,6 @@
     "material": "flesh",
     "weight": 1000,
     "volume": 1,
-    "bashing": 0,
     "use_action": {
         "type": "place_monster",
         "monster_id": "mon_blob",
@@ -39,26 +36,26 @@
   },{
     "id" : "minion_dormant",
     "type": "TOOL",
-    "symbol": ",",
-    "color": "green",
+    "symbol": "j",
+    "color": "red",
     "name": "dormant minion",
+    "//": "Weight and volume are low because items cannot be activated on the ground.",
     "description": "Your very own undead servant.  The blob controlling its body is in a state of coma, awaiting your orders.  Use this item to wake up the minion.",
-    "price": 600000,
+    "price": 250000,
     "material": "flesh",
     "weight": 10000,
-    "volume": 15,
-    "bashing": 0,
+    "volume": 800,
     "category": "tools",
     "use_action": {
         "type": "place_monster",
-        "monster_id": "mon_zombie",
+        "monster_id": "mon_jabberwock",
         "difficulty": 6,
         "skill1": "firstaid",
         "skill2": "electronics",
-        "hostile_msg": "Something has gone wrong; after getting up the zombie lumbers toward you menacingly!",
-        "friendly_msg": "The zombie climbs to its feet and shambles around.",
+        "hostile_msg": "Something has gone wrong; after getting up the jabberwock lumbers toward you menacingly!",
+        "friendly_msg": "The jabberwock climbs to its feet and shambles around.",
         "place_randomly": true,
-        "moves": 60
+        "moves": 420
     }
   },{
     "id": "revival_serum",
@@ -74,14 +71,13 @@
     "healthy" : -30,
     "addiction_type" : "none",
     "addiction_potential" : 0,
-    "nutrition" : -100,
+    "calories" : -868,
     "fun": -10,
     "color": "green",
     "description": "A potent drug, necessary when performing a revival operation on larger animals (including humans).  It induces a violent allergic reactions in living organisms, so using it on yourself is a REALLY bad idea.",
     "price": 100000,
     "weight": 1,
     "volume": 1,
-    "bashing": 0,
     "tool" : "syringe",
     "category": "drugs"
   },{
@@ -96,7 +92,6 @@
     "symbol" : "?",
     "material" : ["paper"],
     "volume" : 5,
-    "bashing" : -2,
     "time" : 120,
     "fun" : -3,
     "skill" : "firstaid",
@@ -113,10 +108,9 @@
     "time": 30000,
     "reversible": true,
     "decomp_learn": 7,
-    "autolearn": false,
     "book_learn": [[ "abdul_necro", 5 ]],
     "qualities":[
-      {"id":"SCREW","level":1,"amount":1} ],
+      {"id":"SCREW","level":1} ],
     "tools": [
       [ [ "soldering_iron", 10], [ "toolset", 10] ]
     ],
@@ -136,11 +130,9 @@
     "skills_required": [[ "electronics", 2]],
     "difficulty": 5,
     "time": 15000,
-    "reversible": false,
-    "autolearn": false,
     "book_learn": [[ "abdul_necro", 4 ]],
+    "using": [ [ "sewing_standard", 30 ] ],
     "tools":[
-      [ [ "sewing_kit", 30] ],
       [ ["UPS_off", 1], ["adv_UPS_off", 1] ]
     ],
     "components": [
@@ -156,13 +148,11 @@
     "skills_required": [ "firstaid", 3],
     "difficulty": 4,
     "time": 10000,
-    "reversible": false,
-    "autolearn": false,
     "book_learn": [[ "abdul_necro", 3 ] ],
     "qualities":[
-      {"id":"CHEM","level":2,"amount":1} ],
+      {"id":"CHEM","level":2} ],
     "tools": [
-      [ [ "char_smoker", 3], [ "hotplate", 25], [ "toolset", 25], [ "fire", -1] ],
+      [ [ "water_boiling_heat", 25, "LIST" ] ],
       [ [ "vacutainer", -1] ]
     ],
     "components": [
@@ -172,25 +162,24 @@
   },{
     "type": "recipe",
     "result": "minion_dormant",
+    "//": "The weight of crafting requirements should be equal to a jabberwock corpse, or 440.92 lbs.",
     "category": "CC_OTHER",
     "subcategory": "CSC_OTHER_TOOLS",
     "skill_used": "firstaid",
     "skills_required": [[ "tailor", 6], [ "electronics", 6]],
     "difficulty": 7,
     "time": 120000,
-    "reversible": false,
-    "autolearn": false,
-    "book_learn": [["abdul_necro", 6]],
+    "book_learn": [["abdul_necro", 7]],
+    "using": [ [ "sewing_standard", 240 ] ],
     "tools": [
-      [ ["sewing_kit", 30] ],
-      [ ["syringe", -1] ],
-      [ ["vacutainer", -1] ]
+      [ ["syringe", -1] ]
     ],
     "components": [
-      [ ["revival_serum", 1] ],
-      [ ["meat_tainted", 8], ["human_flesh", 8] ],
-      [ ["bone", 4] ],
-      [ ["blob_dormant", 1] ]
+      [ ["revival_serum", 4] ],
+      [ ["meat_tainted", 34], ["human_flesh", 34] ],
+      [ ["bone", 20] ],
+      [ ["fat_tainted", 24], [ "fat", 24 ] ],
+      [ ["blob_dormant", 4] ]
     ]
   },{
     "type" : "item_group",

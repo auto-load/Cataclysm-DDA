@@ -3,7 +3,7 @@
     "id": "bandolier_pistol",
     "type": "ARMOR",
     "name": "pistol bandolier",
-    "description" : "An embroidered leather bandolier for keeping revolver cartridges close to hand.  If this doesn't make you feel like a cowboy nothing will.",
+    "description" : "An embroidered leather bandolier for keeping pistol cartridges close to hand.  If this doesn't make you feel like a cowboy nothing will.",
     "weight": 140,
     "volume": 1,
     "price": 1900,
@@ -12,14 +12,15 @@
     "color": "dark_gray",
     "covers": [ "TORSO" ],
     "coverage": 10,
-    "encumbrance": 6,
+    "encumbrance": 3,
     "material_thickness": 1,
     "use_action": {
         "type": "bandolier",
         "capacity": 18,
-        "ammo": [ "32", "38", "44", "45", "9mm" ]
+        "ammo": [ "32", "762x25", "38", "40", "44", "45", "9x18", "9mm", "454", "500" ],
+        "draw_cost": 20
     },
-    "flags": [ "WATER_FRIENDLY", "VARSIZE", "WAIST", "OVERSIZE", "FANCY" ]
+    "flags": [ "WATER_FRIENDLY", "WAIST", "OVERSIZE", "FANCY" ]
   },
   {
     "id": "bandolier_rifle",
@@ -34,14 +35,15 @@
     "color": "dark_gray",
     "covers": [ "TORSO" ],
     "coverage": 10,
-    "encumbrance": 6,
+    "encumbrance": 3,
     "material_thickness": 1,
     "use_action": {
         "type": "bandolier",
         "capacity": 16,
-        "ammo": [ "22", "223", "3006", "308", "762", "762R", "8x40mm"  ]
+        "ammo": [ "22", "223", "5x50", "545x39", "3006", "308", "300", "762", "762R", "8x40mm" ],
+        "draw_cost": 20
     },
-    "flags": [ "WATER_FRIENDLY", "VARSIZE", "WAIST", "OVERSIZE" ]
+    "flags": [ "WATER_FRIENDLY", "WAIST", "OVERSIZE" ]
   },
   {
     "id": "bandolier_shotgun",
@@ -56,14 +58,39 @@
     "color": "dark_gray",
     "covers": [ "TORSO" ],
     "coverage": 10,
-    "encumbrance": 6,
+    "encumbrance": 3,
     "material_thickness": 1,
     "use_action": {
         "type": "bandolier",
         "capacity": 12,
-        "ammo": [ "shot", "20x66mm" ]
+        "ammo": [ "shot", "20x66mm" ],
+        "draw_cost": 20
     },
-    "flags": [ "WATER_FRIENDLY", "VARSIZE", "WAIST", "OVERSIZE" ]
+    "flags": [ "WATER_FRIENDLY", "WAIST", "OVERSIZE" ]
+  },
+  {
+    "id": "flintlock_pouch",
+    "type": "ARMOR",
+    "name": "paper cartridge pouch",
+    "name_plural": "paper cartridge pouches",
+    "description": "A covered leather pouch, worn at the waist to store and protect prepared blackpowder cartridges.",
+    "weight": 160,
+    "volume": 2,
+    "price": 4900,
+    "material": "leather",
+    "symbol": "[",
+    "color": "dark_gray",
+    "covers": [ "TORSO" ],
+    "coverage": 10,
+    "encumbrance": 5,
+    "material_thickness": 1,
+    "use_action": {
+      "type": "bandolier",
+      "capacity": 14,
+      "ammo": [ "flintlock", "36paper", "44paper", "blunderbuss" ],
+      "draw_cost": 20
+    },
+    "flags": [ "WATER_FRIENDLY", "WAIST", "OVERSIZE" ]
   },
   {
     "id": "bandolier_wrist",
@@ -83,7 +110,8 @@
     "use_action": {
         "type": "bandolier",
         "capacity": 4,
-        "ammo": [ "22", "223", "3006", "308", "762", "762R", "8x40mm" ]
+        "ammo": [ "22", "223", "5x50", "545x39", "3006", "308", "300", "762", "762R", "8x40mm" ],
+        "draw_cost": 20
     },
     "flags": [ "WATER_FRIENDLY", "BELTED", "ALLOWS_NATURAL_ATTACKS" ]
   },
@@ -91,6 +119,7 @@
     "id": "grenade_pouch",
     "type": "ARMOR",
     "name": "grenade pouch",
+    "name_plural": "grenade pouches",
     "description" : "A small pouch for storing cartridge grenades with straps for attaching it to your belt or other webbing.",
     "weight": 90,
     "volume": 1,
@@ -105,8 +134,36 @@
     "use_action": {
         "type": "bandolier",
         "capacity": 4,
-        "ammo": [ "40mm" ]
+        "ammo": [ "40mm" ],
+        "draw_cost": 20
     },
     "flags": [ "WATER_FRIENDLY", "BELTED", "OVERSIZE" ]
-  }
+  },
+  {
+    "id": "grenadebandolier",
+    "type": "ARMOR",
+    "name": "large grenade pouch",
+    "name_plural": "large grenade pouches",
+    "description": "A pouch for holding up to four full-sized grenades of various types.",
+    "weight": 600,
+    "volume": 5,
+    "price": 3000,
+    "rigid": false,
+    "material": "cotton",
+    "symbol": "[",
+    "color": "dark_gray",
+    "covers": [ "TORSO" ],
+    "coverage": 15,
+    "material_thickness": 2,
+    "use_action": {
+      "type": "holster",
+      "holster_prompt": "Stash grenades",
+      "holster_msg": "You stash your %s.",
+      "multi": 4,
+      "max_volume": 3,
+      "draw_cost": 30,
+      "flags": [ "GRENADE" ]
+    },
+      "flags": [ "WATER_FRIENDLY", "BELTED" ]
+	}
 ]

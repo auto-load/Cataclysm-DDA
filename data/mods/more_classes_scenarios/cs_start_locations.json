@@ -1,0 +1,32 @@
+[
+  {
+    "type" : "start_location",
+    "ident" : "fema_entrance_s",
+    "name" : "Fema Entrance",
+    "target" : "fema_entrance"
+  },
+  {
+    "type" : "start_location",
+    "ident" : "fema_s",
+    "name" : "Fema Camp",
+    "target" : "fema"
+  },
+  {
+    "type" : "start_location",
+    "ident" : "mansion_e2_s",
+    "name" : "Mansion Entrance",
+    "target" : "mansion_e2"
+  },
+  {
+    "type" : "start_location",
+    "ident" : "mansion_+2_s",
+    "name" : "Mansion",
+    "target" : "mansion_+2"
+  },
+  {
+    "type" : "start_location",
+    "ident" : "s_gas_s",
+    "name" : "Gas Station",
+    "target" : "s_gas"
+  }
+]

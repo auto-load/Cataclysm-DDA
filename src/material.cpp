@@ -4,93 +4,139 @@
 #include "damage.h" // damage_type
 #include "json.h"
 #include "translations.h"
+#include "generic_factory.h"
+#include "item.h"
 
 #include <string>
 #include <map>
 
 namespace
 {
-std::map<material_id, material_type> _all_materials;
+
+generic_factory<material_type> material_data( "material", "ident" );
+
 } // namespace
 
+/** @relates string_id */
 template<>
 bool string_id<material_type>::is_valid() const
 {
-    return _all_materials.count( *this ) > 0;
+    return material_data.is_valid( *this );
 }
 
+/** @relates string_id */
 template<>
 const material_type &string_id<material_type>::obj() const
 {
-    const auto found = _all_materials.find( *this );
-    if( found == _all_materials.end() ) {
-        debugmsg( "Tried to get invalid material: %s", c_str() );
-        static const material_type null_material{};
-        return null_material;
-    }
-    return found->second;
+    return material_data.obj( *this );
 }
 
-material_type::material_type()
+material_type::material_type() :
+    id( material_id::NULL_ID() ),
+    _bash_dmg_verb( translate_marker( "damages" ) ),
+    _cut_dmg_verb( translate_marker( "damages" ) )
 {
-    _ident = material_id( "null" );
-    _name = "null";
-    _salvage_id = "null";
-    _salvage_multiplier = 1.0;
-    _bash_resist = 0;
-    _cut_resist = 0;
-    _bash_dmg_verb = _( "damages" );
-    _cut_dmg_verb = _( "damages" );
-    _dmg_adj[0] = _( "lightly damaged" );
-    _dmg_adj[1] = _( "damaged" );
-    _dmg_adj[2] = _( "very damaged" );
-    _dmg_adj[3] = _( "thoroughly damaged" );
-    _acid_resist = 0;
-    _elec_resist = 0;
-    _fire_resist = 0;
-    _chip_resist = 0;
-    _density = 1;
+    _dmg_adj = { translate_marker( "lightly damaged" ), translate_marker( "damaged" ), translate_marker( "very damaged" ), translate_marker( "thoroughly damaged" ) };
 }
 
-// load a material object from incoming JSON
-void material_type::load_material( JsonObject &jsobj )
+mat_burn_data load_mat_burn_data( JsonObject &jsobj )
 {
-    material_type mat;
+    mat_burn_data bd;
+    assign( jsobj, "immune", bd.immune );
+    assign( jsobj, "volume_penalty", bd.volume_per_turn );
+    jsobj.read( "fuel", bd.fuel );
+    jsobj.read( "smoke", bd.smoke );
+    jsobj.read( "burn", bd.burn );
+    return bd;
+}
 
-    mat._ident = material_id( jsobj.get_string( "ident" ) );
-    mat._name = _( jsobj.get_string( "name" ).c_str() );
-    mat._salvage_id = jsobj.get_string( "salvage_id", "null" );
-    mat._salvage_multiplier = jsobj.get_float( "salvage_multiplier", 1.0 );
-    mat._bash_resist = jsobj.get_int( "bash_resist" );
-    mat._cut_resist = jsobj.get_int( "cut_resist" );
-    mat._bash_dmg_verb = _( jsobj.get_string( "bash_dmg_verb" ).c_str() );
-    mat._cut_dmg_verb = _( jsobj.get_string( "cut_dmg_verb" ).c_str() );
-    mat._acid_resist = jsobj.get_int( "acid_resist" );
-    mat._elec_resist = jsobj.get_int( "elec_resist" );
-    mat._fire_resist = jsobj.get_int( "fire_resist" );
-    mat._chip_resist = jsobj.get_int( "chip_resist" );
-    mat._density = jsobj.get_int( "density" );
-    mat._edible = jsobj.get_bool( "edible", false );
+void material_type::load( JsonObject &jsobj, const std::string & )
+{
+    mandatory( jsobj, was_loaded, "name", _name );
+
+    mandatory( jsobj, was_loaded, "bash_resist", _bash_resist );
+    mandatory( jsobj, was_loaded, "cut_resist", _cut_resist );
+    mandatory( jsobj, was_loaded, "acid_resist", _acid_resist );
+    mandatory( jsobj, was_loaded, "elec_resist", _elec_resist );
+    mandatory( jsobj, was_loaded, "fire_resist", _fire_resist );
+    mandatory( jsobj, was_loaded, "chip_resist", _chip_resist );
+    mandatory( jsobj, was_loaded, "density", _density );
+
+    optional( jsobj, was_loaded, "salvaged_into", _salvaged_into, "null" );
+    optional( jsobj, was_loaded, "repaired_with", _repaired_with, "null" );
+    optional( jsobj, was_loaded, "edible", _edible, false );
+    optional( jsobj, was_loaded, "soft", _soft, false );
 
     auto arr = jsobj.get_array( "vitamins" );
     while( arr.has_more() ) {
         auto pair = arr.next_array();
-        mat._vitamins.emplace( vitamin_id( pair.get_string( 0 ) ), pair.get_float( 1 ) );
+        _vitamins.emplace( vitamin_id( pair.get_string( 0 ) ), pair.get_float( 1 ) );
     }
 
-    JsonArray jsarr = jsobj.get_array( "dmg_adj" );
-    mat._dmg_adj[0] = _( jsarr.next_string().c_str() );
-    mat._dmg_adj[1] = _( jsarr.next_string().c_str() );
-    mat._dmg_adj[2] = _( jsarr.next_string().c_str() );
-    mat._dmg_adj[3] = _( jsarr.next_string().c_str() );
+    mandatory( jsobj, was_loaded, "bash_dmg_verb", _bash_dmg_verb );
+    mandatory( jsobj, was_loaded, "cut_dmg_verb", _cut_dmg_verb );
 
-    _all_materials[mat._ident] = mat;
-    DebugLog( D_INFO, DC_ALL ) << "Loaded material: " << mat._name;
+    JsonArray jsarr = jsobj.get_array( "dmg_adj" );
+    while( jsarr.has_more() ) {
+        _dmg_adj.push_back( jsarr.next_string() );
+    }
+
+    JsonArray burn_data_array = jsobj.get_array( "burn_data" );
+    for( size_t intensity = 0; intensity < MAX_FIELD_DENSITY; intensity++ ) {
+        if( burn_data_array.has_more() ) {
+            JsonObject brn = burn_data_array.next_object();
+            _burn_data[ intensity ] = load_mat_burn_data( brn );
+        } else {
+            // If not specified, supply default
+            bool flammable = _fire_resist <= static_cast<int>( intensity );
+            mat_burn_data mbd;
+            if( flammable ) {
+                mbd.burn = 1;
+            }
+
+            _burn_data[ intensity ] = mbd;
+        }
+    }
+    auto bp_array = jsobj.get_array( "burn_products" );
+    while( bp_array.has_more( ) ) {
+        auto pair = bp_array.next_array();
+        _burn_products.emplace_back( pair.get_string( 0 ), static_cast< float >( pair.get_float( 1 ) ) );
+    }
+
+    auto compactor_in_array = jsobj.get_array( "compact_accepts" );
+    while( compactor_in_array.has_more( ) ) {
+        _compact_accepts.emplace_back( compactor_in_array.next_string() );
+    }
+    auto compactor_out_array = jsobj.get_array( "compacts_into" );
+    while( compactor_out_array.has_more( ) ) {
+        _compacts_into.emplace_back( compactor_out_array.next_string() );
+    }
 }
 
-void material_type::reset()
+void material_type::check() const
 {
-    _all_materials.clear();
+    if( name().empty() ) {
+        debugmsg( "material %s has no name.", id.c_str() );
+    }
+    if( _dmg_adj.size() < 4 ) {
+        debugmsg( "material %s specifies insufficient damaged adjectives.", id.c_str() );
+    }
+    if( !item::type_is_defined( _salvaged_into ) ) {
+        debugmsg( "invalid \"salvaged_into\" %s for %s.", _salvaged_into.c_str(), id.c_str() );
+    }
+    if( !item::type_is_defined( _repaired_with ) ) {
+        debugmsg( "invalid \"repaired_with\" %s for %s.", _repaired_with.c_str(), id.c_str() );
+    }
+    for( auto &ca : _compact_accepts ) {
+        if( !ca.is_valid() ) {
+            debugmsg( "invalid \"compact_accepts\" %s for %s.", ca.c_str(), id.c_str() );
+        }
+    }
+    for( auto &ci : _compacts_into ) {
+        if( !item::type_is_defined( ci ) || !item( ci, 0 ).only_made_of( std::set<material_id> { id } ) ) {
+            debugmsg( "invalid \"compacts_into\" %s for %s.", ci.c_str(), id.c_str() );
+        }
+    }
 }
 
 int material_type::dam_resist( damage_type damtype ) const
@@ -117,29 +163,24 @@ int material_type::dam_resist( damage_type damtype ) const
     }
 }
 
-bool material_type::is_null() const
-{
-    return ( _ident == material_id( "null" ) );
-}
-
 material_id material_type::ident() const
 {
-    return _ident;
+    return id;
 }
 
 std::string material_type::name() const
 {
-    return _name;
+    return _( _name.c_str() );
 }
 
-std::string material_type::salvage_id() const
+itype_id material_type::salvaged_into() const
 {
-    return _salvage_id;
+    return _salvaged_into;
 }
 
-float material_type::salvage_multiplier() const
+itype_id material_type::repaired_with() const
 {
-    return _salvage_multiplier;
+    return _repaired_with;
 }
 
 int material_type::bash_resist() const
@@ -154,12 +195,12 @@ int material_type::cut_resist() const
 
 std::string material_type::bash_dmg_verb() const
 {
-    return _bash_dmg_verb;
+    return _( _bash_dmg_verb.c_str() );
 }
 
 std::string material_type::cut_dmg_verb() const
 {
-    return _cut_dmg_verb;
+    return _( _cut_dmg_verb.c_str() );
 }
 
 std::string material_type::dmg_adj( int damage ) const
@@ -170,7 +211,7 @@ std::string material_type::dmg_adj( int damage ) const
     }
 
     // apply bounds checking
-    return _dmg_adj[ std::min( damage, MAX_ITEM_DAMAGE ) - 1 ];
+    return _( _dmg_adj[std::min( size_t( damage ), _dmg_adj.size() ) - 1].c_str() );
 }
 
 int material_type::acid_resist() const
@@ -202,3 +243,59 @@ bool material_type::edible() const
 {
     return _edible;
 }
+
+bool material_type::soft() const
+{
+    return _soft;
+}
+
+const mat_burn_data &material_type::burn_data( size_t intensity ) const
+{
+    return _burn_data[ std::min<size_t>( intensity, MAX_FIELD_DENSITY ) - 1 ];
+}
+
+const mat_burn_products &material_type::burn_products() const
+{
+    return _burn_products;
+}
+
+const material_id_list &material_type::compact_accepts() const
+{
+    return _compact_accepts;
+}
+
+const mat_compacts_into &material_type::compacts_into() const
+{
+    return _compacts_into;
+}
+
+void materials::load( JsonObject &jo, const std::string &src )
+{
+    material_data.load( jo, src );
+}
+
+void materials::check()
+{
+    material_data.check();
+}
+
+void materials::reset()
+{
+    material_data.reset();
+}
+
+material_list materials::get_all()
+{
+    return material_data.get_all();
+}
+
+material_list materials::get_compactable()
+{
+    material_list all = get_all();
+    material_list compactable;
+    std::copy_if( all.begin(), all.end(), std::back_inserter( compactable ), []( material_type mt ) {
+        return !mt.compacts_into().empty();
+    } );
+    return compactable;
+}
+

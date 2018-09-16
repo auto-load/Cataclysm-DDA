@@ -1,25 +1,29 @@
+#pragma once
 #ifndef GAMEMODE_H
 #define GAMEMODE_H
 
 #include <vector>
 #include <string>
+#include <memory>
 #include "enums.h"
-#include "itype.h"
+#include "calendar.h"
 #include "string_id.h"
 
 enum action_id : int;
-
+using itype_id = std::string;
+namespace catacurses
+{
+class window;
+} // namespace catacurses
 struct special_game;
 struct mtype;
 using mtype_id = string_id<mtype>;
 
-std::string special_game_name(special_game_id id);
-special_game *get_special_game(special_game_id id);
+std::string special_game_name( special_game_id id );
+std::unique_ptr<special_game> get_special_game( special_game_id id );
 
 struct special_game {
-    virtual ~special_game() {
-        return;
-    };
+    virtual ~special_game() = default;
     virtual special_game_id id() {
         return SGAME_NULL;
     };
@@ -67,21 +71,20 @@ enum tut_lesson {
 };
 
 struct tutorial_game : public special_game {
-        virtual special_game_id id() override {
+        special_game_id id() override {
             return SGAME_TUTORIAL;
         };
-        virtual bool init() override;
-        virtual void per_turn() override;
-        virtual void pre_action( action_id &act ) override;
-        virtual void post_action( action_id act ) override;
-        virtual void game_over() override { };
+        bool init() override;
+        void per_turn() override;
+        void pre_action( action_id &act ) override;
+        void post_action( action_id act ) override;
+        void game_over() override { };
 
     private:
         void add_message( tut_lesson lesson );
 
         bool tutorials_seen[NUM_LESSONS];
 };
-
 
 // DEFENSE
 
@@ -112,7 +115,8 @@ enum defense_location {
 enum caravan_category {
     CARAVAN_CART = 0,
     CARAVAN_MELEE,
-    CARAVAN_GUNS,
+    CARAVAN_RANGED,
+    CARAVAN_AMMUNITION,
     CARAVAN_COMPONENTS,
     CARAVAN_FOOD,
     CARAVAN_CLOTHES,
@@ -123,24 +127,23 @@ enum caravan_category {
 struct defense_game : public special_game {
         defense_game();
 
-        virtual special_game_id id() override {
+        special_game_id id() override {
             return SGAME_DEFENSE;
         };
-        virtual bool init() override;
-        virtual void per_turn() override;
-        virtual void pre_action( action_id &act ) override;
-        virtual void post_action( action_id act ) override;
-        virtual void game_over() override;
+        bool init() override;
+        void per_turn() override;
+        void pre_action( action_id &act ) override;
+        void post_action( action_id act ) override;
+        void game_over() override;
 
     private:
         void init_to_style( defense_style new_style );
         void load_style( std::string style_name );
 
         void setup();
-        void refresh_setup( WINDOW *w, int selection );
+        void refresh_setup( const catacurses::window &w, int selection );
         void init_mtypes();
         void init_constructions();
-        void init_recipes();
         void init_map();
         std::vector<itype_id> carvan_items( caravan_category cat );
 
@@ -151,7 +154,6 @@ struct defense_game : public special_game {
 
         std::string special_wave_message( std::string name );
 
-
         // DATA
         int current_wave;
 
@@ -161,7 +163,7 @@ struct defense_game : public special_game {
         int initial_difficulty; // Total "level" of monsters in first wave
         int wave_difficulty;    // Increased "level" of monsters per wave
 
-        int time_between_waves;     // Cooldown / building / healing time
+        time_duration time_between_waves;     // Cooldown / building / healing time
         int waves_between_caravans; // How many waves until we get to trade?
 
         unsigned long initial_cash;  // How much cash do we start with?

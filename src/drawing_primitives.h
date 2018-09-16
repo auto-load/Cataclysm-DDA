@@ -1,3 +1,4 @@
+#pragma once
 #ifndef DRAWING_PRIMITIVES_H
 #define DRAWING_PRIMITIVES_H
 
@@ -12,6 +13,5 @@ void draw_rough_circle( std::function<void( const int, const int )>set, int x, i
 void draw_circle( std::function<void( const int, const int )>set, double x, double y, double rad );
 
 void draw_circle( std::function<void( const int, const int )>set, int x, int y, int rad );
-
 
 #endif

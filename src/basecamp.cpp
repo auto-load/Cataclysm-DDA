@@ -1,9 +1,10 @@
+#include "basecamp.h"
 #include <algorithm>
 #include <sstream>
 
-#include "basecamp.h"
 #include "output.h"
 #include "translations.h"
+#include "string_formatter.h"
 
 basecamp::basecamp()
     : name(), posx( 0 ), posy( 0 )
@@ -23,7 +24,7 @@ std::string basecamp::board_name() const
 
 std::string basecamp::save_data() const
 {
-    std::stringstream data;
+    std::ostringstream data;
 
     // TODO: This will lose underscores, is that a problem?
     // strip spaces from name

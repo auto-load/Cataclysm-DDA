@@ -2,9 +2,32 @@
   {
     "abstract": "gun_base",
     "type": "GUN",
-    "name": "base firearm",
+    "reload_noise_volume": 10,
+    "name": "base gun",
     "symbol": "(",
     "color": "light_gray"
+  },
+  {
+    "abstract": "flamethrower_base",
+    "copy-from": "gun_base",
+    "type": "GUN",
+    "reload_noise": "slosh.",
+    "name": "base flamethrower",
+    "skill": "launcher",
+    "ammo": "flammable",
+    "ammo_effects": [ "NO_BOOM", "FLARE" ],
+    "reload": 4,
+    "flags": [ "FIRE_100", "NEVER_JAMS", "FIRESTARTER" ]
+  },
+  {
+    "abstract": "launcher_base",
+    "copy-from": "gun_base",
+    "type": "GUN",
+    "name": "base launcher",
+    "skill": "launcher",
+    "modes": [ [ "DEFAULT", "single", 1, "NPC_AVOID" ] ],
+    "valid_mod_locations": [ [ "accessories", 2 ], [ "barrel", 1 ], [ "sights", 1 ] ],
+    "flags": [ "RELOAD_ONE", "RELOAD_EJECT", "NEVER_JAMS" ]
   },
   {
     "abstract": "pistol_base",
@@ -12,8 +35,19 @@
     "type": "GUN",
     "name": "base pistol",
     "skill": "pistol",
-    "aim_speed": 4,
-    "valid_mod_locations": [ [ "accessories", 2 ], [ "barrel", 1 ], [ "bore", 1 ], [ "grip", 1 ], [ "mechanism", 4 ], [ "magazine", 1 ], [ "muzzle", 1 ], [ "rail", 1 ], [ "sights", 1 ], [ "stock", 1 ], [ "underbarrel", 1 ] ]
+    "valid_mod_locations": [
+      [ "accessories", 2 ],
+      [ "barrel", 1 ],
+      [ "bore", 1 ],
+      [ "grip", 1 ],
+      [ "mechanism", 4 ],
+      [ "magazine", 1 ],
+      [ "muzzle", 1 ],
+      [ "rail", 1 ],
+      [ "sights", 1 ],
+      [ "stock", 1 ],
+      [ "underbarrel", 1 ]
+    ]
   },
   {
     "abstract": "pistol_revolver",
@@ -23,7 +57,15 @@
     "proportional": { "reload": 0.7 },
     "extend": { "flags": [ "RELOAD_ONE", "RELOAD_EJECT", "NEVER_JAMS" ] },
     "//": "Revolvers exclude the muzzle location preventing installation of suppressors",
-    "valid_mod_locations": [ [ "accessories", 2 ], [ "barrel", 1 ], [ "bore", 1 ], [ "grip", 1 ], [ "mechanism", 4 ], [ "sights", 1 ], [ "stock", 1 ] ]
+    "valid_mod_locations": [
+      [ "accessories", 2 ],
+      [ "barrel", 1 ],
+      [ "bore", 1 ],
+      [ "grip", 1 ],
+      [ "mechanism", 4 ],
+      [ "sights", 1 ],
+      [ "stock", 1 ]
+    ]
   },
   {
     "abstract": "rifle_base",
@@ -31,16 +73,39 @@
     "type": "GUN",
     "name": "base rifle",
     "skill": "rifle",
-    "aim_speed": 8,
-    "valid_mod_locations": [ [ "accessories", 4 ], [ "barrel", 1 ], [ "bore", 1 ], [ "grip", 1 ], [ "mechanism", 4 ], [ "magazine", 1 ], [ "muzzle", 1 ], [ "rail", 1 ], [ "sights", 1 ], [ "stock", 1 ], [ "underbarrel", 1 ] ]
+    "valid_mod_locations": [
+      [ "accessories", 4 ],
+      [ "barrel", 1 ],
+      [ "bore", 1 ],
+      [ "grip", 1 ],
+      [ "mechanism", 4 ],
+      [ "magazine", 1 ],
+      [ "muzzle", 1 ],
+      [ "rail", 1 ],
+      [ "sights", 1 ],
+      [ "stock", 1 ],
+      [ "underbarrel", 1 ]
+    ]
   },
   {
     "abstract": "rifle_manual",
     "copy-from": "rifle_base",
     "type": "GUN",
-    "name": "rifles with manual actions",
+    "name": "rifle with manual actions",
+    "name_plural": "rifles with manual actions",
     "//": "Manual actions exclude the magazine location preventing installation of belt-feed adaptors",
-    "valid_mod_locations": [ [ "accessories", 4 ], [ "barrel", 1 ], [ "bore", 1 ], [ "grip", 1 ], [ "mechanism", 4 ], [ "muzzle", 1 ], [ "rail", 1 ], [ "sights", 1 ], [ "stock", 1 ], [ "underbarrel", 1 ] ]
+    "valid_mod_locations": [
+      [ "accessories", 4 ],
+      [ "barrel", 1 ],
+      [ "bore", 1 ],
+      [ "grip", 1 ],
+      [ "mechanism", 4 ],
+      [ "muzzle", 1 ],
+      [ "rail", 1 ],
+      [ "sights", 1 ],
+      [ "stock", 1 ],
+      [ "underbarrel", 1 ]
+    ]
   },
   {
     "abstract": "rifle_semi",
@@ -60,14 +125,33 @@
     "type": "GUN",
     "name": "base shotgun",
     "skill": "shotgun",
-    "aim_speed": 6
+    "ammo": "shot",
+    "valid_mod_locations": [
+      [ "accessories", 4 ],
+      [ "barrel", 1 ],
+      [ "bore", 1 ],
+      [ "grip", 1 ],
+      [ "mechanism", 4 ],
+      [ "muzzle", 1 ],
+      [ "rail", 1 ],
+      [ "sights", 1 ],
+      [ "stock", 1 ],
+      [ "underbarrel", 1 ]
+    ]
+  },
+  {
+    "abstract": "shotgun_pump",
+    "copy-from": "shotgun_base",
+    "type": "GUN",
+    "name": "pump action shotgun",
+    "reload_noise": "chuk chuk.",
+    "flags": [ "RELOAD_ONE", "PUMP_ACTION" ]
   },
   {
     "abstract": "smg_base",
     "copy-from": "gun_base",
     "type": "GUN",
     "name": "base SMG",
-    "skill": "smg",
-    "aim_speed": 6
+    "skill": "smg"
   }
 ]

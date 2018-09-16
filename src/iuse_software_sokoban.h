@@ -1,11 +1,16 @@
+#pragma once
 #ifndef SOFTWARE_SOKOBAN_H
 #define SOFTWARE_SOKOBAN_H
-
-#include "cursesdef.h"
 
 #include <string>
 #include <vector>
 #include <map>
+#include <iosfwd>
+
+namespace catacurses
+{
+class window;
+} // namespace catacurses
 
 class sokoban_game
 {
@@ -13,8 +18,8 @@ class sokoban_game
         class cUndo
         {
             public:
-                int iOldY;
-                int iOldX;
+                int iOldY = 0;
+                int iOldX = 0;
                 std::string sTileOld;
 
                 cUndo() {
@@ -24,16 +29,16 @@ class sokoban_game
                     sTileOld = " ";
                 }
 
-                cUndo( const int arg_y, const int arg_x, const std::string arg_tile ) {
+                cUndo( const int arg_y, const int arg_x, const std::string &arg_tile ) {
                     iOldY = arg_y;
                     iOldX = arg_x;
                     sTileOld = arg_tile;
                 }
-
-                ~cUndo() {};
         };
 
-        int iCurrentLevel, iNumLevel, iTotalMoves;
+        int iCurrentLevel = 0;
+        int iNumLevel = 0;
+        int iTotalMoves = 0;
         std::map<int, std::map<int, std::string> > mLevel;
         std::map<int, std::map<std::string, size_t> > mLevelInfo;
         std::vector<std::map<int, std::map<int, std::string> > > vLevel;
@@ -41,12 +46,12 @@ class sokoban_game
         std::vector<std::vector<std::pair<int, int> > > vLevelDone;
         std::map<int, bool> mAlreadyWon;
 
-        bool parse_level();
+        void parse_level( std::istream &fin );
         bool check_win();
         int get_wall_connection( const int iY, const int iX );
-        void draw_level( WINDOW *w_sokoban );
-        void clear_level( WINDOW *w_sokoban );
-        void print_score( WINDOW *w_sokoban, int iScore, int iMoves );
+        void draw_level( const catacurses::window &w_sokoban );
+        void clear_level( const catacurses::window &w_sokoban );
+        void print_score( const catacurses::window &w_sokoban, int iScore, int iMoves );
     public:
         int start_game();
         sokoban_game();

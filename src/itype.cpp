@@ -1,13 +1,18 @@
-#include "debug.h"
 #include "itype.h"
-#include "ammo.h"
-#include "game.h"
-#include "item_factory.h"
+#include "debug.h"
+#include "player.h"
+#include "output.h"
 #include "translations.h"
 
-#include <fstream>
 #include <stdexcept>
 #include <algorithm>
+#include <cmath>
+
+std::string gunmod_location::name() const
+{
+    // Yes, currently the name is just the translated id.
+    return _( _id.c_str() );
+}
 
 std::string itype::nname( unsigned int const quantity ) const
 {
@@ -27,23 +32,17 @@ bool itype::can_use( const std::string &iuse_name ) const
 
 const use_function *itype::get_use( const std::string &iuse_name ) const
 {
-    const auto iter = std::find_if( use_methods.begin(),
-    use_methods.end(), [&]( const use_function & func ) {
-        return func.get_type() == iuse_name;
-    } );
-    if( iter == use_methods.end() ) {
-        return nullptr;
-    }
-    return &*iter;
+    auto iter = use_methods.find( iuse_name );
+    return iter != use_methods.end() ? &iter->second : nullptr;
 }
 
-long itype::tick( player *p, item *it, const tripoint &pos ) const
+long itype::tick( player &p, item &it, const tripoint &pos ) const
 {
     // Note: can go higher than current charge count
     // Maybe should move charge decrementing here?
     int charges_to_use = 0;
     for( auto &method : use_methods ) {
-        int val = method.call( p, it, true, pos );
+        int val = method.second.call( p, it, true, pos );
         if( charges_to_use < 0 || val < 0 ) {
             charges_to_use = -1;
         } else {
@@ -54,16 +53,15 @@ long itype::tick( player *p, item *it, const tripoint &pos ) const
     return charges_to_use;
 }
 
-long itype::invoke( player *p, item *it, const tripoint &pos ) const
+long itype::invoke( player &p, item &it, const tripoint &pos ) const
 {
     if( !has_use() ) {
         return 0;
     }
-
-    return use_methods.front().call( p, it, false, pos );
+    return invoke( p, it, pos, use_methods.begin()->first );
 }
 
-long itype::invoke( player *p, item *it, const tripoint &pos, const std::string &iuse_name ) const
+long itype::invoke( player &p, item &it, const tripoint &pos, const std::string &iuse_name ) const
 {
     const use_function *use = get_use( iuse_name );
     if( use == nullptr ) {
@@ -72,19 +70,17 @@ long itype::invoke( player *p, item *it, const tripoint &pos, const std::string 
         return 0;
     }
 
+    const auto ret = use->can_call( p, it, false, pos );
+
+    if( !ret.success() ) {
+        p.add_msg_if_player( m_info, ret.str() );
+        return 0;
+    }
+
     return use->call( p, it, false, pos );
 }
 
-std::string ammo_name( std::string const &t )
+std::string gun_type_type::name() const
 {
-    std::string ret = ammunition_type::find_ammunition_type( t ).name();
-    if( ret != "none" ) {
-        ret = _( ret.c_str() );
-    }
-    return ret;
-}
-
-itype_id const &default_ammo( std::string const &t )
-{
-    return ammunition_type::find_ammunition_type( t ).default_ammotype();
+    return pgettext( "gun_type_type", name_.c_str() );
 }

@@ -10,22 +10,13 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 3] , ["textbook_electronics", 3]],
+  "using": [ [ "soldering_standard", 10 ], [ "surface_heat", 10 ] ],
   "qualities" : [
-    {"id":"SCREW","level":1,"amount":1}
+    {"id":"SCREW","level":1}
   ],
   "tools" : [
-     [ ["mold_plastic", -1] ],
-     [
-      ["hotplate", 10],
-      ["toolset", 10],
-      ["fire", -1]
-     ],
-     [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-     ]
+     [ ["mold_plastic", -1] ]
   ],
   "components" : [
      [ ["plastic_chunk", 6] ],
@@ -46,22 +37,13 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 3] , ["textbook_electronics", 3]],
+  "using": [ [ "soldering_standard", 10 ], [ "surface_heat", 10 ] ],
   "qualities" : [
-    {"id":"SCREW","level":1,"amount":1}
+    {"id":"SCREW","level":1}
   ],
   "tools" : [
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 10],
-      ["toolset", 10],
-      ["fire", -1]
-    ],
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
+    [ ["mold_plastic", -1] ]
   ],
   "components": [
     [
@@ -90,22 +72,13 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 5,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 4] , ["textbook_electronics", 4]],
+  "using": [ [ "soldering_standard", 12 ], [ "surface_heat", 12 ] ],
   "qualities" : [
-    {"id":"SCREW","level":1,"amount":1}
+    {"id":"SCREW","level":1}
   ],
   "tools" : [
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 12],
-      ["toolset", 12],
-      ["fire", -1]
-    ],
-    [
-      [ "soldering_iron", 12 ],
-      [ "toolset", 12 ]
-    ]
+    [ ["mold_plastic", -1] ]
   ],
   "components" : [
     [ ["plastic_chunk", 6] ],
@@ -126,20 +99,11 @@
   "difficulty": 5,
   "time": 20000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 4] , ["textbook_electronics", 4] , ["textbook_carpentry", 5]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "using": [ [ "soldering_standard", 10 ], [ "surface_heat", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
    "tools" : [
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 10],
-      ["toolset", 10],
-      ["fire", -1]
-    ],
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
+    [ ["mold_plastic", -1] ]
   ],
   "components" : [
     [ ["plastic_chunk", 6] ],
@@ -155,12 +119,9 @@
   "category": "CC_ELECTRONIC",
   "subcategory": "CSC_ELECTRONIC_COMPONENTS",
   "skill_used": "electronics",
-  "difficulty": 0,
   "time": 3000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "radio_book", 1 ] , [ "textbook_anarch", 1 ]],
-  "qualities":[ {"id":"SAW_M","level":1,"amount":1} ],
+  "qualities":[ {"id":"SAW_M","level":1} ],
   "components": [
     [
       [ "steel_chunk", 1 ],
@@ -178,11 +139,10 @@
   "time": 5000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [[ "radio_book", 3 ] , [ "textbook_anarch", 5 ]],
   "qualities":[
-    {"id":"HAMMER","level":2,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1}
+    {"id":"HAMMER","level":2},
+    {"id":"SAW_M","level":1}
   ],
   "components": [
     [ [ "amplifier", 1 ] ],
@@ -200,15 +160,9 @@
   "time": 4000,
   "reversible": true,
   "decomp_learn": 1,
-  "autolearn": false,
   "book_learn": [[ "radio_book", 3 ] , [ "manual_electronics", 1 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 4 ],
-      [ "toolset", 4 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 4 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "circuit", 1 ] ],
     [ [ "e_scrap", 3 ] ],
@@ -222,16 +176,9 @@
   "skill_used": "electronics",
   "difficulty": 1,
   "time": 6500,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "textbook_electronics", 2 ] , [ "advanced_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 3 ],
-      [ "toolset", 3 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 3 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "amplifier", 2 ] ],
     [ [ "cable", 20 ] ]
@@ -244,39 +191,10 @@
   "skill_used": "electronics",
   "difficulty": 1,
   "time": 7000,
-  "reversible": false,
   "autolearn": [[ "electronics", 3 ]],
   "book_learn": [[ "manual_electronics", 1 ] , [ "textbook_electronics", 1 ] , [ "advanced_electronics", 1 ]],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 5 ] ],
   "components": [ [ [ "cable", 40 ] ] ]
-},{
-  "type" : "recipe",
-  "result": "lead_plate",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_COMPONENTS",
-  "skill_used": "fabrication",
-  "difficulty": 2,
-  "time": 6500,
-  "reversible": true,
-  "decomp_learn": 1,
-  "autolearn": false,
-  "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 1 ] , [ "manual_mechanics", 2] ],
-  "tools": [
-    [ ["crucible", -1], ["crucible_clay", -1] ],
-    [
-      [ "hotplate", 20 ],
-      [ "toolset", 20 ],
-      [ "fire", -1 ]
-    ]
-  ],
-  "components": [
-    [ [ "lead", 100 ] ]
-  ]
 },{
   "type" : "recipe",
   "result": "receiver",
@@ -287,19 +205,14 @@
   "time": 12000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "radio_book", 1 ] , [ "textbook_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 4 ],
-      [ "toolset", 4 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 4 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "circuit", 2 ] ],
     [ [ "e_scrap", 5 ] ],
-    [ [ "cable", 2 ] ]
+    [ [ "cable", 2 ] ],
+    [ [ "amplifier", 1 ] ]
   ]
 },{
   "type" : "recipe",
@@ -311,19 +224,14 @@
   "time": 14000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "textbook_electronics", 2 ] , [ "textbook_anarch", 3 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 7 ],
-      [ "toolset", 7 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 7 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "circuit", 3 ] ],
     [ [ "e_scrap", 7 ] ],
-    [ [ "cable", 3 ] ]
+    [ [ "cable", 3 ] ],
+    [ [ "amplifier", 2 ] ]
   ]
 },{
   "type" : "recipe",
@@ -334,15 +242,9 @@
   "difficulty": 3,
   "time": 10000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 3 ] , [ "mag_electronics", 4 ] , [ "textbook_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 7 ],
-      [ "toolset", 7 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 7 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "cable", 8 ] ],
     [ [ "plastic_chunk", 2 ] ],
@@ -352,20 +254,29 @@
   ]
 },{
   "type" : "recipe",
-  "result": "lightstrip_inactive",
+  "result": "lightstrip_dead",
   "category": "CC_ELECTRONIC",
   "subcategory": "CSC_ELECTRONIC_LIGHTING",
   "skill_used": "electronics",
-  "difficulty": 0,
+  "difficulty": 1,
   "time": 10000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 1 ]],
   "components": [
     [ [ "amplifier", 1 ] ],
     [ [ "cable", 5 ] ],
-    [ [ "battery", 15 ] ],
     [ [ "e_scrap", 1 ] ]
+  ]
+},{
+   "type" : "recipe",
+  "result": "lightstrip_inactive",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_LIGHTING",
+  "skill_used": "electronics",
+  "time": 1000,
+  "flags": ["BLIND_EASY"],
+  "components": [
+    [ [ "lightstrip_dead", 1 ] ],
+    [ [ "battery", 15 ] ]
   ]
 },{
   "type" : "recipe",
@@ -375,15 +286,8 @@
   "skill_used": "electronics",
   "difficulty": 1,
   "time": 15000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 1 ]],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 5 ] ],
   "components": [
     [
       [ "sheet_metal", 1 ]
@@ -409,17 +313,21 @@
   "time": 10000,
   "reversible": true,
   "decomp_learn": 0,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 0 ] , [ "mag_electronics", 1 ]],
   "components": [
     [ [ "amplifier", 1 ] ],
     [
       [ "scrap", 4 ],
-      [ "can_drink", 1 ],
-      [ "can_food", 1 ],
+      [ "can_drink_unsealed", 1 ],
+      [ "can_food_unsealed", 1 ],
+      [ "canister_empty", 1 ],
       [ "bottle_glass", 1 ],
       [ "bottle_plastic", 1 ],
       [ "bottle_plastic_small", 1 ]
+    ],
+    [
+      [ "lightstrip_dead", 1 ],
+      [ "light_bulb", 1 ]
     ],
     [ [ "cable", 10 ] ]
   ]
@@ -434,13 +342,40 @@
   "time": 15000,
   "reversible": true,
   "decomp_learn": 1,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 2 ]],
   "components": [
     [ [ "amplifier", 4 ] ],
     [
       [ "steel_chunk", 2 ],
       [ "scrap", 6 ]
+    ],
+    [
+      [ "lightstrip_dead", 4 ],
+      [ "light_bulb", 4 ]
+    ],
+    [ [ "cable", 10 ] ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "car_headlight",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_LIGHTING",
+  "skill_used": "mechanics",
+  "skills_required": [ "electronics", 1 ],
+  "difficulty": 2,
+  "time": 12000,
+  "reversible": true,
+  "decomp_learn": 1,
+  "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 2 ]],
+  "components": [
+    [ [ "amplifier", 2 ] ],
+    [
+      [ "plastic_chunk", 2 ],
+      [ "scrap", 3 ]
+    ],
+    [
+      [ "lightstrip_dead", 2 ],
+      [ "light_bulb", 2 ]
     ],
     [ [ "cable", 10 ] ]
   ]
@@ -476,10 +411,8 @@
   "skills_required": [ "electronics", 1 ],
   "difficulty": 2,
   "time": 5000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 1 ] , [ "mag_electronics", 1 ] , [ "textbook_anarch", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [
       [ "lemon", 1 ],
@@ -499,109 +432,10 @@
       [ "scrap", 1 ]
     ],
     [
-      [ "can_drink", 1 ],
-      [ "can_food", 1 ],
+      [ "can_drink_unsealed", 1 ],
+      [ "can_food_unsealed", 1 ],
       [ "canister_empty", 1 ]
     ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_compartment",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_COMPONENTS",
-  "skill_used": "fabrication",
-  "skills_required": [ "electronics", 3 ],
-  "difficulty": 3,
-  "time": 15000,
-  "reversible": true,
-  "decomp_learn": 2,
-  "autolearn": true,
-  "book_learn": [[ "manual_electronics", 2 ], [ "advanced_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
-  "components": [
-    [ [ "scrap", 4 ] ],
-    [ [ "cable", 5 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_ups",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_COMPONENTS",
-  "skill_used": "electronics",
-  "difficulty": 5,
-  "time": 15000,
-  "reversible": true,
-  "decomp_learn": 4,
-  "autolearn": true,
-  "book_learn": [[ "manual_electronics", 3 ], [ "textbook_electronics", 3 ], [ "advanced_electronics", 3] , [ "recipe_lab_elec", 3] , [ "textbook_anarch", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 24 ],
-      [ "toolset", 24 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 1 ] ],
-    [ [ "small_storage_battery", 1 ] ],
-    [ [ "scrap", 4 ] ],
-    [ [ "cable", 10 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_atomic",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_PARTS",
-  "skill_used": "electronics",
-  "skills_required": [ "fabrication", 6 ],
-  "difficulty": 6,
-  "time": 60000,
-  "reversible": false,
-  "decomp_learn": 4,
-  "autolearn": false,
-  "book_learn": [[ "recipe_atomic_battery", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
-  "components": [
-    [ [ "scrap", 6 ] ],
-    [ [ "cable", 4 ] ],
-    [ [ "plut_cell", 1 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "double_plutonium_core",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_PARTS",
-  "skill_used": "electronics",
-  "skills_required": [ "fabrication", 7 ],
-  "difficulty": 7,
-  "time": 60000,
-  "reversible": false,
-  "decomp_learn": 4,
-  "autolearn": false,
-  "book_learn": [[ "recipe_atomic_battery", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "scrap", 9 ] ],
-    [ [ "cable", 6 ] ],
-    [ [ "alloy_plate", 1 ] ]
   ]
 },{
   "type" : "recipe",
@@ -612,16 +446,9 @@
   "skill_used": "electronics",
   "difficulty": 1,
   "time": 15000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "radio_book", 1 ] , [ "textbook_anarch", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 5 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "radio", 1 ] ],
     [ [ "amplifier", 2 ] ]
@@ -635,15 +462,9 @@
   "difficulty": 2,
   "time": 30000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "textbook_anarch", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "amplifier", 2 ] ],
     [ [ "antenna", 1 ] ],
@@ -659,15 +480,9 @@
   "difficulty": 2,
   "time": 25000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "radio_book", 2] , [ "textbook_anarch", 3 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "receiver", 1 ] ],
     [ [ "antenna", 1 ] ],
@@ -685,9 +500,8 @@
   "time": 25000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "advanced_electronics", 3 ] , [ "manual_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "element", 8 ] ],
     [
@@ -709,9 +523,8 @@
   "time": 30000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "advanced_electronics", 1 ] , [ "mag_electronics", 3 ] , [ "manual_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "element", 4 ] ],
     [ [ "amplifier", 1 ] ],
@@ -719,6 +532,7 @@
       [ "scrap", 2 ],
       [ "pan", 1 ],
       [ "pot", 1 ],
+      [ "pot_copper", 1 ],
       [ "knife_butcher", 2 ],
       [ "knife_steak", 6 ],
       [ "knife_butter", 6 ],
@@ -735,19 +549,16 @@
   "skills_required" : [[ "electronics", 3 ], [ "survival", 3 ]],
   "difficulty": 4,
   "time": 60000,
-  "reversible": false,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [[ "textbook_survival", 3 ] , [ "advanced_electronics", 3 ] , [ "manual_electronics", 3 ]],
+  "using": [ [ "soldering_standard", 10 ], [ "forging_standard", 10 ] ],
   "qualities" : [
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"HAMMER","level":3,"amount":1}
+    { "id": "ANVIL", "level": 3 },
+    {"id":"SCREW","level":1},
+    {"id":"HAMMER","level":3}
   ],
   "tools": [
-    [ ["tongs", -1] ],
-    [ ["anvil", -1] ],
-    [ ["forge", 50], ["oxy_torch", 10] ],
-    [ [ "soldering_iron", 10 ], [ "toolset", 10 ] ]
+    [ ["tongs", -1] ]
   ],
   "components": [
     [ [ "element", 3 ] ],
@@ -756,7 +567,7 @@
       [ "steel_chunk", 3 ],
       [ "scrap", 9 ]
     ],
-    [ ["plastic_chunk", 2] ],
+    [ [ "plastic_chunk", 2] ],
     [ [ "cable", 10 ] ]
   ]
 },{
@@ -769,25 +580,20 @@
   "time": 30000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "advanced_electronics", 1 ] , [ "mag_electronics", 3 ] , [ "manual_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "element", 4 ] ],
     [ [ "amplifier", 1 ] ],
     [
-      [ "scrap", 6 ],
-      [ "pan", 2 ],
-      [ "pot", 2 ],
-      [ "knife_butcher", 6 ],
-      [ "knife_steak", 18 ],
-      [ "knife_butter", 18 ],
+      [ "scrap", 2 ],
+      [ "pan", 1 ],
+      [ "pot", 1 ],
+      [ "pot_copper", 1 ],
+      [ "knife_butcher", 2 ],
+      [ "knife_steak", 6 ],
+      [ "knife_butter", 6 ],
       [ "muffler", 1 ]
     ],
     [ [ "cable", 15 ] ]
@@ -802,15 +608,9 @@
   "time": 25000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [[ "advanced_electronics", 2 ] , [ "textbook_electronics", 3 ] , [ "textbook_anarch", 3 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "amplifier", 1 ] ],
     [ [ "power_supply", 1 ] ],
@@ -826,15 +626,9 @@
   "time": 11000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "mag_electronics", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 6 ],
-      [ "toolset", 6 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 6 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "amplifier", 1 ] ],
     [ [ "scrap", 2 ] ],
@@ -850,14 +644,8 @@
   "time": 30000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "amplifier", 1 ] ],
     [ [ "transponder", 1 ] ],
@@ -877,15 +665,9 @@
   "time": 35000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [[ "textbook_anarch", 3 ] , [ "advanced_electronics", 5 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "processor", 1 ] ],
     [ [ "RAM", 1 ] ],
@@ -903,19 +685,13 @@
   "time": 40000,
   "reversible": true,
   "note": "you might be able to reverse-engineer assembly, but not the music",
-  "autolearn": false,
   "book_learn": [[ "textbook_electronics", 6 ] , [ "textbook_robots", 5 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 5 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "superglue", 1 ] ],
-    [ ["processor", 1] ],
-    [ ["RAM", 1] ],
+    [ [ "processor", 1 ] ],
+    [ [ "RAM", 1 ] ],
     [ [ "amplifier", 1 ] ],
     [ [ "cable", 2 ] ]
   ]
@@ -930,15 +706,9 @@
   "time": 60000,
   "reversible": true,
   "note": "as with mp3, no learning how to encode the software from taking it apart",
-  "autolearn": false,
   "book_learn": [[ "textbook_electronics", 7 ] , [ "textbook_robots", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      ["soldering_iron", 10],
-      ["toolset", 10]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ ["superglue", 1] ],
     [ ["processor", 1] ],
@@ -958,15 +728,9 @@
   "time": 35000,
   "reversible": true,
   "decomp_learn": 5,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 4] , ["textbook_electronics", 4] , ["atomic_survival", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "power_supply", 1 ] ],
     [ [ "amplifier", 2 ] ],
@@ -983,15 +747,9 @@
   "time": 35000,
   "reversible": true,
   "decomp_learn": 7,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 6] , ["textbook_electronics", 6] , ["atomic_survival", 5]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "processor", 1 ] ],
     [ [ "e_scrap", 1 ] ],
@@ -1010,13 +768,8 @@
   "decomp_learn": 4,
   "autolearn": true,
   "book_learn": [[ "advanced_electronics", 4] , [ "recipe_lab_elec", 4 ] , [ "textbook_anarch", 4]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 24 ],
-      [ "toolset", 24 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 24 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "power_supply", 4 ] ],
     [ [ "small_storage_battery", 1 ] ],
@@ -1035,429 +788,15 @@
   "time" : 85000,
   "reversible" : true,
   "decomp_learn" : 4,
-  "autolearn" : false,
   "book_learn": [[ "recipe_lab_elec", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools" : [
-    [
-      [ "soldering_iron", 24 ],
-      [ "toolset", 24 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 24 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components" : [
     [ [ "power_supply", 6 ] ],
     [ [ "amplifier", 5 ] ],
     [ [ "scrap", 4 ] ],
     [ [ "cable", 14 ] ],
     [ [ "plut_cell", 2 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_power_storage",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 6,
-  "time": 50000,
-  "reversible": true,
-  "decomp_learn": 5,
-  "autolearn": false,
-  "book_learn": [[ "recipe_augs", 6 ] , [ "recipe_lab_elec", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [
-      [ "power_supply", 6 ],
-      [ "UPS_off", 1 ]
-    ],
-    [ [ "amplifier", 4 ] ],
-    [ [ "plut_cell", 1 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_power_storage_mkII",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 12,
-  "time": 70000,
-  "reversible": true,
-  "decomp_learn": 8,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 8 ] , [ "recipe_augs", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 32 ],
-      [ "toolset", 32 ]
-    ]
-  ],
-  "components": [
-    [
-      [ "power_supply", 10 ],
-      [ "UPS_off", 2 ],
-      [ "adv_UPS_off", 1 ]
-    ],
-    [ [ "amplifier", 6 ] ],
-    [ [ "plut_cell", 2 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_solar",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 7,
-  "time": 50000,
-  "reversible": true,
-  "decomp_learn": 7,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 7 ] , [ "recipe_augs", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 4 ] ],
-    [ [ "amplifier", 2 ] ],
-    [ [ "solar_cell", 4 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_batteries",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 7,
-  "time": 50000,
-  "reversible": true,
-  "decomp_learn": 7,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 7 ] , [ "recipe_augs", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 2 ] ],
-    [ [ "amplifier", 2 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_reactor",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "mechanics", 10 ],
-  "difficulty": 10,
-  "time": 50000,
-  "reversible": false,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 10 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 120 ],
-      [ "toolset", 120 ]
-    ]
-  ],
-  "components": [
-    [ [ "minireactor", 1 ] ],
-    [ [ "metal_tank_little", 1 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_plut_filter",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 10 ],
-  "difficulty": 10,
-  "time": 50000,
-  "reversible": false,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 10 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 80 ],
-      [ "toolset", 80 ]
-    ],
-    [
-      [ "laptop", -1 ],
-      [ "control_laptop", -1 ]
-    ]
-  ],
-  "components": [
-    [ [ "bio_blood_filter", 1 ] ],
-    [ [ "metal_tank_little", 1 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ],
-    [
-      [ "usb_drive", 1 ],
-      [ "RAM", 1 ],
-      [ "mobile_memory_card", 1 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_reactor_upgrade",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "computer", 10 ],
-  "difficulty": 10,
-  "time": 50000,
-  "reversible": false,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 10 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 120 ],
-      [ "toolset", 120 ]
-    ],
-    [
-      [ "laptop", -1 ],
-      [ "control_laptop", -1 ]
-    ]
-  ],
-  "components": [
-    [ [ "bio_radscrubber", 1 ] ],
-    [ [ "bio_geiger", 1 ] ],
-    [
-      [ "usb_drive", 1 ],
-      [ "RAM", 1 ],
-      [ "mobile_memory_card", 1 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_advreactor",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "computer", 10 ],
-  "difficulty": 10,
-  "time": 5000,
-  "reversible": false,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 10 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
-  "components": [
-    [ [ "bio_reactor", 1 ] ],
-    [ [ "bio_reactor_upgrade", 1 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_ups",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 6,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 7 ], [ "recipe_mil_augs", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [[ "power_supply", 2]],
-    [[ "recharge_station", 1]],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_power_armor_interface",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 6,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 7 ] , [ "recipe_mil_augs", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 2 ] ],
-    [ [ "amplifier", 2 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_power_armor_interface_mkII",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 9,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "book_learn": [[ "recipe_lab_elec", 8 ] , [ "recipe_mil_augs", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 5 ] ],
-    [ [ "amplifier", 3 ] ],
-    [ [ "plut_cell", 5 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_evap",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 7,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "decomp_learn": 7,
-  "book_learn": [[ "recipe_lab_elec", 7 ] , [ "recipe_augs", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 2 ] ],
-    [ [ "hose", 1 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_flashlight",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 6,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "decomp_learn": 5,
-  "book_learn": [[ "recipe_lab_elec", 5 ] , [ "recipe_augs", 5 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 1 ] ],
-    [ [ "amplifier", 1 ] ],
-    [ [ "lens", 2 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "bio_water_extractor",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_CBMS",
-  "skill_used": "electronics",
-  "skills_required": [ "firstaid", 5 ],
-  "difficulty": 7,
-  "time": 50000,
-  "reversible": true,
-  "autolearn": false,
-  "decomp_learn": 7,
-  "book_learn": [[ "recipe_lab_elec", 6 ] , [ "recipe_mil_augs", 5 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
-  "components": [
-    [ [ "power_supply", 2 ] ],
-    [ [ "element", 1 ] ],
-    [ [ "hose", 1 ] ],
-    [
-      [ "burnt_out_bionic", 1 ],
-      [ "processor", 2 ]
-    ]
   ]
 },{
   "type" : "recipe",
@@ -1469,19 +808,13 @@
   "difficulty": 6,
   "time": 50000,
   "reversible": true,
-  "autolearn": false,
   "decomp_learn": 5,
   "book_learn": [[ "recipe_lab_elec", 6 ] , [ "recipe_mil_augs", 5 ]],
+  "using": [ [ "soldering_standard", 20 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [
@@ -1500,19 +833,13 @@
   "difficulty": 6,
   "time": 50000,
   "reversible": true,
-  "autolearn": false,
   "decomp_learn": 5,
   "book_learn": [[ "recipe_lab_elec", 6 ] , [ "recipe_mil_augs", 5 ]],
+  "using": [ [ "soldering_standard", 20 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [
@@ -1531,19 +858,13 @@
   "difficulty": 6,
   "time": 50000,
   "reversible": true,
-  "autolearn": false,
   "decomp_learn": 5,
   "book_learn": [[ "recipe_lab_elec", 6 ] , [ "recipe_mil_augs", 5 ]],
+  "using": [ [ "soldering_standard", 20 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [
@@ -1562,19 +883,13 @@
   "difficulty": 6,
   "time": 50000,
   "reversible": true,
-  "autolearn": false,
   "decomp_learn": 5,
   "book_learn": [[ "recipe_lab_elec", 6 ] , [ "recipe_mil_augs", 6 ]],
+  "using": [ [ "soldering_standard", 20 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [
@@ -1593,20 +908,60 @@
   "time": 50000,
   "reversible": true,
   "decomp_learn": 6,
-  "autolearn": false,
   "book_learn": [["textbook_mechanics", 8] , ["textbook_electronics", 7] , ["advanced_electronics", 7] , ["textbook_robots", 6]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 35 ],
-      [ "toolset", 35 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 35 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [["power_supply", 2]],
     [["processor", 2]],
     [["scrap", 5]],
     [["cable", 8]]
+  ]
+},{
+  "type" : "recipe",
+  "result": "solarpack",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_OTHER",
+  "skill_used": "electronics",
+  "skills_required": [ [ "fabrication", 2 ], [ "mechanics", 2 ] ],
+  "difficulty": 8,
+  "time": 50000,
+  "reversible": true,
+  "decomp_learn": 5,
+  "autolearn": true,
+  "book_learn": [ [ "manual_electronics", 7 ], [ "textbook_electronics", 6 ], [ "advanced_electronics", 6 ] ],
+  "using": [ [ "soldering_standard", 35 ], [ "welding_standard", 20 ] ],
+  "qualities": [ { "id": "SCREW", "level": 1 }, { "id": "HAMMER", "level": 2 }, { "id": "SAW_M", "level": 2 } ],
+  "components": [
+    [ [ "power_supply", 2 ] ],
+    [ [ "amplifier", 2 ] ],
+    [ [ "solar_cell", 12 ], [ "solar_panel", 1 ] ],
+    [ [ "cable", 20 ] ],
+    [ [ "sheet_metal", 3 ] ],
+    [ [ "rope_6", 1 ] ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "q_solarpack",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_OTHER",
+  "skill_used": "electronics",
+  "skills_required": [ [ "fabrication", 2 ], [ "mechanics", 2 ] ],
+  "difficulty": 10,
+  "time": 50000,
+  "reversible": true,
+  "decomp_learn": 5,
+  "autolearn": true,
+  "book_learn": [ [ "recipe_augs" , 7 ], [ "recipe_lab_elec", 7 ], [ "advanced_electronics", 8 ] ],
+  "using": [ [ "soldering_standard", 35 ], [ "welding_standard", 20 ] ],
+  "qualities": [ { "id": "SCREW", "level": 1 }, { "id": "HAMMER", "level": 2 }, { "id": "SAW_M", "level": 2 } ],
+  "components": [
+    [ [ "power_supply", 2 ] ],
+    [ [ "amplifier", 2 ] ],
+    [ [ "cable", 20 ] ],
+    [ [ "solar_panel_v3", 1 ] ],
+    [ [ "sheet_metal", 3 ] ],
+    [ [ "rope_6", 1 ] ]
   ]
 },{
   "type" : "recipe",
@@ -1620,13 +975,8 @@
   "decomp_learn": 5,
   "autolearn": true,
   "book_learn": [["manual_electronics", 7] , ["textbook_electronics", 6] , ["advanced_electronics", 6]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
- "tools": [
-    [
-      [ "soldering_iron", 35 ],
-      [ "toolset", 35 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 35 ] ],
+  "qualities" : [ {"id": "SCREW","level":1} ],
   "components": [
     [ [ "power_supply", 2 ] ],
     [ [ "amplifier", 2 ] ],
@@ -1643,15 +993,9 @@
   "time": 50000,
   "reversible": true,
   "decomp_learn": 5,
-  "autolearn": false,
   "book_learn": [["textbook_robots", 8]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 35 ],
-      [ "toolset", 35 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 35 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "power_supply", 2 ] ],
     [ [ "amplifier", 2 ] ],
@@ -1670,23 +1014,16 @@
   "reversible": true,
   "decomp_learn": 3,
   "autolearn": true,
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":2,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ], "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 100 ],
-      [ "oxy_torch", 20 ],
-      [ "welder_crude", 150 ],
-      [ "toolset", 150 ]
-    ]
+    {"id":"HAMMER","level":2},
+    {"id":"SAW_M","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [[ "frame", 1 ]],
     [[ "hotplate", 1 ]],
-    [[ "pot", 1 ]],
+    [[ "pot", 1 ], [ "pot_copper", 1 ]],
     [[ "pan", 1 ]],
     [[ "water_faucet", 1 ]],
     [[ "cable", 5 ]]
@@ -1702,18 +1039,31 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [["textbook_mechanics", 6] , ["textbook_electronics", 8] , ["textbook_fabrication", 8] , ["welding_book", 5]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "power_supply", 2 ] ],
     [ [ "forge", 1 ] ],
+    [ [ "cable", 5] ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "kilnrig",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_PARTS",
+  "skill_used": "fabrication",
+  "skills_required": ["electronics",4],
+  "difficulty": 4,
+  "time": 20000,
+  "reversible": true,
+  "decomp_learn": 4,
+  "book_learn": [["textbook_mechanics", 6] , ["textbook_electronics", 8] , ["textbook_fabrication", 8] , ["welding_book", 5]],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
+  "components": [
+    [ [ "power_supply", 2 ] ],
+    [ [ "kiln", 1 ] ],
     [ [ "cable", 5] ]
   ]
 },{
@@ -1727,21 +1077,12 @@
   "time": 60000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [["textbook_mechanics", 6] , ["textbook_electronics", 8] , ["textbook_fabrication", 8] , ["welding_book", 5]],
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":2,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 100 ],
-      [ "oxy_torch", 20 ],
-      [ "welder_crude", 150 ],
-      [ "toolset", 150 ]
-    ]
+    {"id":"HAMMER","level":2},
+    {"id":"SAW_M","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [ [ "frame", 1 ] ],
@@ -1763,29 +1104,21 @@
   "time": 60000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [["textbook_fabrication", 3] , ["manual_fabrication", 3] , ["manual_electronics", 3] , ["manual_mechanics", 3]],
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":2,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 100 ],
-      [ "oxy_torch", 20 ],
-      [ "welder_crude", 150 ],
-      [ "toolset", 150 ]
-    ]
+    {"id":"HAMMER","level":2},
+    {"id":"SAW_M","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [ [ "frame", 1 ] ],
-    [ ["vac_sealer", 1], ["makeshift_sealer", 1] ],
+    [ [ "vac_sealer", 1 ], [ "makeshift_sealer", 1 ] ],
     [ [ "dehydrator", 1 ] ],
     [ [ "water_purifier", 1 ] ],
+    [ [ "food_processor", 1 ] ],
     [ [ "press", 1 ] ],
-    [ ["cable", 5] ]
+    [ [ "cable", 5 ] ]
   ]
 },{
   "type" : "recipe",
@@ -1798,21 +1131,12 @@
   "time": 60000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [["textbook_fabrication", 3] , ["manual_fabrication", 3] , ["manual_electronics", 3] , ["manual_mechanics", 3]],
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 100 ],
-      [ "oxy_torch", 20 ],
-      [ "welder_crude", 150 ],
-      [ "toolset", 150 ]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SAW_M","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [ [ "frame", 1 ] ],
@@ -1832,15 +1156,9 @@
   "time": 10000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "small_storage_battery", 8 ] ],
     [ [ "scrap", 4 ] ],
@@ -1857,124 +1175,13 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 3,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 20 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "medium_storage_battery", 4 ] ],
     [ [ "scrap", 8 ] ],
     [ [ "cable", 10 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_motorbike",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_PARTS",
-  "skill_used": "electronics",
-  "skills_required": [ "fabrication", 1 ],
-  "difficulty": 3,
-  "time": 30000,
-  "reversible": true,
-  "decomp_learn": 2,
-  "autolearn": false,
-  "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ],
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 5],
-      ["toolset", 15],
-      ["fire", -1]
-    ]
-  ],
-  "components": [
-    [ [ "plastic_chunk", 10 ] ],
-    [ [ "scrap", 2 ] ],
-    [ [ "lead_plate", 4 ] ],
-    [ [ "water_clean", 6 ] ],
-    [ [ "acid", 2 ] ],
-    [ [ "rag", 2 ] ],
-    [ [ "cable", 2 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_car",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_PARTS",
-  "skill_used": "electronics",
-  "skills_required": [ "fabrication", 1 ],
-  "difficulty": 3,
-  "time": 30000,
-  "reversible": true,
-  "decomp_learn": 2,
-  "autolearn": false,
-  "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 15 ],
-      [ "toolset", 15 ]
-    ],
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 8],
-      ["toolset", 8],
-      ["fire", -1]
-    ]
-  ],
-  "components": [
-    [ [ "plastic_chunk", 15 ] ],
-    [ [ "scrap", 4 ] ],
-    [ [ "lead_plate", 6 ] ],
-    [ [ "water_clean", 12 ] ],
-    [ [ "acid", 4 ] ],
-    [ [ "rag", 3 ] ],
-    [ [ "cable", 4 ] ]
-  ]
-},{
-  "type" : "recipe",
-  "result": "battery_truck",
-  "category": "CC_ELECTRONIC",
-  "subcategory": "CSC_ELECTRONIC_PARTS",
-  "skill_used": "electronics",
-  "skills_required": [ "fabrication", 1 ],
-  "difficulty": 3,
-  "time": 30000,
-  "reversible": true,
-  "decomp_learn": 2,
-  "autolearn": false,
-  "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 3]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ],
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 12],
-      ["toolset", 12],
-      ["fire", -1]
-    ]
-  ],
-  "components": [
-    [ [ "plastic_chunk", 20 ] ],
-    [ [ "scrap", 6 ] ],
-    [ [ "lead_plate", 8 ] ],
-    [ [ "water_clean", 16 ] ],
-    [ [ "acid", 6 ] ],
-    [ [ "rag", 5 ] ],
-    [ [ "cable", 6 ] ]
   ]
 },{
   "type" : "recipe",
@@ -1987,15 +1194,9 @@
   "time": 9000,
   "reversible": true,
   "decomp_learn": 8,
-  "autolearn": false,
   "book_learn": [[ "recipe_lab_elec", 7 ] , [ "textbook_robots", 9 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [
       [ "uzi", 1 ],
@@ -2022,15 +1223,9 @@
   "time": 12000,
   "reversible": true,
   "decomp_learn": 9,
-  "autolearn": false,
   "book_learn": [[ "recipe_lab_elec", 8 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [
       [ "cerberus_laser", 3 ],
@@ -2062,15 +1257,9 @@
   "time": 9000,
   "reversible": true,
   "decomp_learn": 8,
-  "autolearn": false,
   "book_learn": [[ "recipe_lab_elec", 7 ] , [ "textbook_robots", 9 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "m4a1", 1 ] ],
     [ [ "processor", 2 ] ],
@@ -2090,16 +1279,11 @@
   "skills_required": [ "computer", 4 ],
   "difficulty": 7,
   "time": 25000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [[ "recipe_lab_elec", 7 ] , [ "textbook_robots", 7 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "tools": [
-    [ [ "software_hacking", -1 ] ],
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
+    [ [ "software_hacking", -1 ] ]
   ],
   "components": [
     [ [ "laptop", 1 ] ],
@@ -2119,19 +1303,14 @@
   "decomp_learn": 4,
   "autolearn": true,
   "book_learn": [["textbook_electronics", 3] , ["advanced_electronics", 3] , ["textbook_chemistry", 5]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 20 ],
-      [ "toolset", 20 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 20 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "element", 2 ] ],
     [ [ "amplifier", 2 ] ],
     [ [ "power_supply", 1 ] ],
     [ [ "cable", 10 ] ],
-    [ [ "pot", 1 ] ],
+    [ [ "pot", 1 ], [ "pot_copper", 1 ] ],
     [ [ "plastic_chunk", 18 ] ]
   ]
 },{
@@ -2143,9 +1322,8 @@
   "difficulty": 3,
   "time": 20000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "recipe_caseless", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "plastic_chunk", 1 ] ],
     [ [ "superglue", 1 ] ],
@@ -2162,9 +1340,8 @@
   "difficulty": 3,
   "time": 30000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "recipe_caseless", 6 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "plastic_chunk", 2 ] ],
     [ [ "superglue", 1 ] ],
@@ -2181,9 +1358,8 @@
   "difficulty": 4,
   "time": 3000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "recipe_caseless", 8 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "plastic_chunk", 5 ] ],
     [ [ "superglue", 1 ] ],
@@ -2200,15 +1376,17 @@
   "skill_used": "fabrication",
   "skills_required" : [ "electronics", 3 ],
   "book_learn": [["advanced_electronics", 3] , ["textbook_electronics", 3]],
+  "using": [ [ "soldering_standard", 5 ] ],
   "difficulty": 4,
   "time": 750,
-  "reversible": false,
   "autolearn": true,
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "pipebomb", 1 ] ],
+    [ [ "pilot_light", 1 ] ],
     [ [ "battery", 5 ] ],
     [ [ "antenna", 1 ] ],
+    [ [ "amplifier", 1 ] ],
     [ [ "cable", 5 ] ]
   ]
 },{
@@ -2219,15 +1397,17 @@
   "skill_used": "fabrication",
   "skills_required" : [ "electronics", 3 ],
   "book_learn": [["advanced_electronics", 3] , ["textbook_electronics", 3]],
+  "using": [ [ "soldering_standard", 5 ] ],
   "difficulty": 4,
   "time": 750,
-  "reversible": false,
   "autolearn": true,
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "dynamite", 1 ] ],
+    [ [ "pilot_light", 1 ] ],
     [ [ "battery", 5 ] ],
     [ [ "antenna", 1 ] ],
+    [ [ "amplifier", 1 ] ],
     [ [ "cable", 5 ] ]
   ]
 },{
@@ -2241,13 +1421,12 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 2,
-  "autolearn": false,
   "book_learn": [[ "manual_electronics", 2 ] , [ "mag_electronics", 2 ] , [ "manual_mechanics", 2]],
+  "using": [ [ "soldering_standard", 5 ] ],
   "qualities" : [
-    {"id":"HAMMER","level":1,"amount":1},
-    {"id":"SCREW","level":1,"amount":1}
+    {"id":"HAMMER","level":1},
+    {"id":"SCREW","level":1}
   ],
-  "tools": [ [ [ "soldering_iron", 5 ], [ "toolset", 5 ] ] ],
   "components": [
     [ [ "steel_chunk", 2 ] ],
     [ [ "scrap", 2 ] ],
@@ -2262,17 +1441,16 @@
   "skills_required" : [ "electronics", 2 ],
   "difficulty": 5,
   "time": 40000,
-  "reversible": false,
   "autolearn": true,
   "qualities" : [
-    {"id":"SAW_M","level":1,"amount":1},
-    {"id":"CUT","level":1,"amount":1},
-    {"id":"HAMMER","level":2,"amount":1}
+    {"id":"SAW_M","level":1},
+    {"id":"CUT","level":1},
+    {"id":"HAMMER","level":2}
   ],
   "tools": [ [ [ "boltcutters", -1 ], [ "toolset", -1 ] ] ],
   "components": [
-    [ [ "wire", 20 ], [ "wire_barbed", 20 ] ],
-    [ [ "duct_tape", 300 ] ]
+    [ [ "copper", 100 ], [ "scrap_copper", 1 ] ],
+    [ [ "duct_tape", 100 ] ]
   ]
 },{
   "type" : "recipe",
@@ -2283,22 +1461,13 @@
   "difficulty": 5,
   "time": 25000,
   "reversible": true,
-  "decop_learn": 5,
-  "autolearn": false,
+  "decomp_learn": 5,
   "book_learn": [["textbook_mechanics", 6] , ["textbook_carpentry", 6] , ["advanced_electronics", 5] , ["textbook_electronics", 5]],
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":3,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 100],
-      [ "welder_crude", 150],
-      [ "toolset", 150],
-      [ "oxy_torch", 10]
-    ]
+    {"id":"HAMMER","level":3},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [ [ "motor_small", 1 ] ],
@@ -2319,21 +1488,12 @@
   "time": 20000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [["textbook_mechanics", 4] , ["textbook_carpentry", 4] , ["advanced_electronics", 3] , ["textbook_electronics", 3]],
+  "using": [ [ "welding_standard", 10 ] ],
   "qualities":[
-    {"id":"HAMMER","level":2,"amount":1},
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"WRENCH","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      ["welder", 100],
-      ["welder_crude", 150],
-      ["toolset", 150],
-      ["oxy_torch", 10]
-    ]
+    {"id":"HAMMER","level":2},
+    {"id":"SCREW","level":1},
+    {"id":"WRENCH","level":1}
   ],
   "components": [
     [ [ "motor_small", 1 ] ],
@@ -2353,20 +1513,15 @@
   "reversible": true,
   "autolearn": true,
   "book_learn": [[ "recipe_lab_elec", 5 ] , [ "textbook_robots", 5 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 14 ],
-      [ "toolset", 14 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 14 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "e_scrap", 5 ] ],
-    [ ["amplifier", 1 ] ],
+    [ [ "amplifier", 1 ] ],
     [ [ "receiver", 1 ] ],
     [ [ "antenna", 1 ] ],
-    [ ["processor", 1 ] ],
-    [ ["RAM", 1 ] ],
+    [ [ "processor", 1 ] ],
+    [ [ "RAM", 1 ] ],
     [ ["small_lcd_screen", 1 ] ]
   ]
 },{
@@ -2379,25 +1534,13 @@
   "difficulty": 8,
   "time": 120000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [ ["textbook_mechanics", 8], [ "textbook_robots", 7 ] ],
+  "using": [ [ "soldering_standard", 30 ], [ "welding_standard", 5 ] ],
   "qualities":[
-      {"id":"HAMMER","level":2,"amount":1},
-      {"id":"SAW_M","level":1,"amount":1},
-      {"id":"WRENCH","level":1,"amount":1},
-      {"id":"SCREW","level":1,"amount":1}
-  ],
-  "tools": [
-    [ [ "goggles_welding", -1 ] ],
-    [
-      [ "welder", 50 ],
-      [ "welder_crude", 75 ],
-      [ "toolset", 75 ]
-    ],
-    [
-      [ "soldering_iron", 30 ],
-      [ "toolset", 30 ]
-    ]
+      {"id":"HAMMER","level":2},
+      {"id":"SAW_M","level":1},
+      {"id":"WRENCH","level":1},
+      {"id":"SCREW","level":1}
   ],
   "components": [
     [ [ "vehicle_controls", 1 ] ],
@@ -2406,6 +1549,27 @@
     [ [ "processor", 3 ] ],
     [ [ "RAM", 3 ] ],
     [ [ "circuit", 3 ] ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "electronics_controls",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_TOOLS",
+  "skill_used": "electronics",
+  "skills_required": [ "mechanics", 1 ],
+  "difficulty": 3,
+  "time": 60000,
+  "reversible": true,
+  "autolearn": true,
+  "using": [ [ "soldering_standard", 150 ] ],
+  "qualities":[
+      {"id":"SCREW","level":1}
+  ],
+  "components": [
+    [ [ "e_scrap", 5 ] ],
+    [ [ "amplifier", 1 ] ],
+    [ [ "cable", 5 ] ],
+    [ [ "plastic_chunk", 5 ] ]
   ]
 },{
   "type" : "recipe",
@@ -2418,13 +1582,8 @@
   "time": 120000,
   "reversible": true,
   "autolearn": true,
-  "qualities":[ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 150 ],
-      [ "toolset", 150 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 150 ] ],
+  "qualities":[ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "small_lcd_screen", 10 ] ],
     [ [ "processor", 3 ] ],
@@ -2440,15 +1599,10 @@
   "skills_required": [ "computer", 3 ],
   "difficulty": 7,
   "time": 180000,
-  "reversible": false,
-  "autolearn": false,
   "book_learn": [ [ "textbook_electronics", 6 ], ["advanced_electronics", 6 ] ],
-  "qualities":[ {"id":"SCREW","level":1,"amount":1} ],
+  "using": [ [ "soldering_standard", 50 ] ],
+  "qualities":[ {"id":"SCREW","level":1} ],
   "tools": [
-    [
-    [ "soldering_iron", 50 ],
-    [ "toolset", 50 ]
-    ],
     [ [ "mold_plastic", -1 ] ]
   ],
   "components": [
@@ -2461,27 +1615,21 @@
 },{
   "type" : "recipe",
   "result": "omnicamera",
-  "id_suffix": "from-eyebots",
+  "id_suffix": "from-cameras",
   "category": "CC_ELECTRONIC",
   "subcategory": "CSC_ELECTRONIC_PARTS",
   "skill_used": "electronics",
   "skills_required": [ "computer", 1 ],
   "difficulty": 5,
   "time": 90000,
-  "reversible": false,
   "autolearn": true,
+  "using": [ [ "soldering_standard", 10 ] ],
   "qualities":[
-    {"id":"SCREW","level":1,"amount":1},
-    {"id":"SAW_M","level":1,"amount":1}
-  ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
+    {"id":"SCREW","level":1},
+    {"id":"SAW_M","level":1}
   ],
   "components": [
-    [ [ "broken_eyebot", 2 ] ],
+    [ [ "camera", 2 ], [ "camera_pro", 2 ], [ "broken_eyebot", 2 ] ],
     [ [ "power_supply", 1 ] ],
     [ [ "cable", 5 ] ]
   ]
@@ -2495,17 +1643,12 @@
   "difficulty": 4,
   "time": 40000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [[ "advanced_electronics", 4 ] , [ "mag_electronics", 6 ] , [ "manual_electronics", 5 ]],
+  "using": [ [ "soldering_standard", 10 ] ],
   "qualities" : [
-    {"id":"SCREW","level":1,"amount":1}
+    {"id":"SCREW","level":1}
   ],
-  "tools": [
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
-  ], "components": [
+  "components": [
     [
       [ "scrap", 4 ]
     ],
@@ -2539,15 +1682,9 @@
   "time": 15000,
   "reversible": true,
   "decomp_learn": 4,
-  "autolearn": false,
   "book_learn": [[ "repeater_mod_guide", 2 ]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 15 ],
-      [ "toolset", 15 ]
-    ]
-  ],
+  "using": [ [ "soldering_standard", 15 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
     [ [ "processor", 1 ] ],
     [ [ "scrap", 2 ] ],
@@ -2557,7 +1694,7 @@
     [ [ "e_scrap", 2 ] ],
     [ [ "amplifier", 2 ] ],
     [ [ "cable", 1 ] ],
-    [ [ "battery_truck", 1 ] ]
+    [ [ "battery_car", 1 ] ]
   ]
 },{
   "type" : "recipe",
@@ -2569,25 +1706,16 @@
   "difficulty": 3,
   "time": 20000,
   "reversible": true,
-  "autolearn": false,
   "book_learn": [["advanced_electronics", 4] , ["textbook_electronics", 3] , ["textbook_fabrication", 3] , ["manual_fabrication", 4]],
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
+  "using": [ [ "soldering_standard", 10 ], [ "surface_heat", 10 ] ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
    "tools" : [
-    [ ["mold_plastic", -1] ],
-    [
-      ["hotplate", 10],
-      ["toolset", 10],
-      ["fire", -1]
-    ],
-    [
-      [ "soldering_iron", 10 ],
-      [ "toolset", 10 ]
-    ]
+    [ ["mold_plastic", -1] ]
   ],
   "components" : [
-    [ ["razor_blade", 1] ],
-    [ ["motor_small", 1] ],
-    [ ["power_supply", 1] ],
+    [ [ "razor_blade", 1 ] ],
+    [ [ "motor_small", 1 ] ],
+    [ [ "power_supply", 1 ] ],
     [ [ "plastic_chunk", 1 ] ]
   ]
 },{
@@ -2598,22 +1726,34 @@
   "skill_used": "electronics",
   "skills_required" : [ "fabrication", 2 ],
   "book_learn": [["advanced_electronics", 3] , ["textbook_electronics", 2]],
+  "using": [ [ "soldering_standard", 5 ] ],
   "difficulty": 4,
-  "time": 1000,
+  "time": 15000,
   "reversible": true,
   "autolearn": true,
-  "qualities" : [ {"id":"SCREW","level":1,"amount":1} ],
-  "tools": [
-    [
-      [ "soldering_iron", 5 ],
-      [ "toolset", 5 ]
-    ]
-  ],
+  "qualities" : [ {"id":"SCREW","level":1} ],
   "components": [
-    [ [ "receiver", 1 ] ],
+    [ [ "antenna", 1 ] ],
     [ [ "pilot_light", 1 ] ],
-    [ [ "battery", 5 ] ],
+    [ [ "battery", 10 ] ],
+    [ [ "amplifier", 1 ] ],
     [ [ "cable", 2 ] ]
+  ]
+},{
+  "type" : "recipe",
+  "result": "electrolysis_kit",
+  "category": "CC_ELECTRONIC",
+  "subcategory": "CSC_ELECTRONIC_TOOLS",
+  "skill_used": "electronics",
+  "using": [ [ "soldering_standard", 10 ] ],
+  "difficulty": 2,
+  "time": 10000,
+  "reversible": true,
+  "autolearn": true,
+  "qualities" : [ {"id":"CUT","level":1} ],
+  "components": [
+    [ [ "cable", 50 ], [ "jumper_cable", 1 ] ],
+    [ [ "scrap", 2 ] ]
   ]
 }
 ]

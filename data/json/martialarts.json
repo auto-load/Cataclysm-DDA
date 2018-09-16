@@ -8,6 +8,14 @@
         "leg_block" : 99
     },{
         "type" : "martial_art",
+        "id" : "style_kicks",
+        "name" : "Force unarmed",
+        "description" : "Not a martial art, setting this style will prevent weapon attacks and force punches (with free hand) or kicks.",
+        "arm_block" : 1,
+        "leg_block" : 99,
+        "force_unarmed" : true
+    },{
+        "type" : "martial_art",
         "id" : "style_brawling",
         "name" : "Brawling",
         "description" : "You're used to hand-to-creature fighting.  Not stylish or sporting, but it gets the job done.",
@@ -54,7 +62,7 @@
                 "mult_bonuses" : [["damage", "bash", 0.5]],
                 "min_unarmed" : 0,
                 "buff_duration" : 2,
-                "description" : "Half damage to enemies"
+                "description" : "Half damage to enemies."
             }
         ],
         "techniques" : [
@@ -67,7 +75,7 @@
         "type" : "martial_art",
         "id" : "style_boxing",
         "name" : "Boxing",
-        "description" : "Sport of the true Gentleman, modern boxing has evolved from the prizefights of the Victorian era.",
+        "description" : "Sport of the true gentleman, modern boxing has evolved from the prizefights of the Victorian era.",
         "arm_block" : 2,
         "leg_block" : 99,
            "static_buffs" : [
@@ -93,7 +101,7 @@
                 "min_unarmed" : 4,
                 "buff_duration" : 2,
                 "max_stacks" : 2,
-                "dodges_bonus" : 1
+                "bonus_dodges" : 1
             }
         ],
         "ondodge_buffs" : [
@@ -129,7 +137,7 @@
                 "min_unarmed" : 0,
                 "buff_duration" : 2,
                 "throw_immune" : true,
-                "description" : "Immune to throws and knockdowns"
+                "description" : "Immune to throws and knockdowns."
             }
         ],
         "techniques" : ["tec_judo_grab", "tec_judo_throw"]
@@ -137,7 +145,7 @@
         "type" : "martial_art",
         "id" : "style_tai_chi",
         "name" : "Tai Chi",
-        "description" : "Though tai chi is often seen as a form of mental and physical exercise, it is a legitimate martial art, focused on self-defense.  Its ability to absorb the force of an attack makes your Perception decrease damage further on a block.",
+        "description" : "Though Tai Chi is often seen as a form of mental and physical exercise, it is a legitimate martial art, focused on self-defense.  Its ability to absorb the force of an attack makes your Perception decrease damage further on a block.",
         "arm_block" : 1,
         "leg_block" : 99,
         "static_buffs" : [
@@ -203,14 +211,14 @@
                 "unarmed_allowed" : true,
                 "min_unarmed" : 0,
                 "flat_bonuses" : [["damage", "bash", "str", 0.2]],
-                "description" : "Increased unarmed power"
+                "description" : "Increased unarmed power."
             },{
                 "id" : "krav_maga_static_edged",
                 "name" : "Krav Maga Edged",
                 "melee_allowed" : true,
                 "min_unarmed" : 0,
                 "mult_bonuses" : [["damage", "stab", 1.2]],
-                "description" : "Increased cutting damage"
+                "description" : "Increased stabbing damage."
             }
         ],
         "techniques" : [
@@ -218,15 +226,23 @@
             "tec_krav_maga_feint",
             "tec_krav_maga_precise",
             "tec_krav_maga_disarm",
-            "tec_krav_maga_grab"
+            "tec_krav_maga_grab",
+            "tec_krav_maga_break"
+        ],
+        "weapons" : [
+            "tonfa",
+            "tonfa_wood",
+            "shocktonfa_off",
+            "shocktonfa_on"
         ]
     },{
         "type" : "martial_art",
         "id" : "style_muay_thai",
         "name" : "Muay Thai",
-        "description" : "Also referred to as the \"Art of 8 Limbs,\" Muay Thai is a popular fighting technique from Thailand that uses powerful strikes.  Your strikes are more powerful with high strength and weaker with low strength, and can momentarily disorient enemies.",
+        "description" : "Also referred to as the \"Art of 8 Limbs,\" Muay Thai is a popular fighting technique from Thailand that uses powerful strikes.  Your strikes are more powerful with high strength and weaker with low strength, and can momentarily disorient enemies.  As this style focuses on using legs and elbow strikes rather than punches, it does not benefit from using any weapons.",
         "arm_block" : 3,
         "leg_block" : 4,
+        "force_unarmed" : true,
         "static_buffs" : [
             {
                 "id" : "muay_thai_static",
@@ -236,7 +252,7 @@
                     ["damage", "bash", -5.0],
                     ["damage", "bash", "str", 0.5]
                 ],
-                "description" : "Attacks scale better with strength"
+                "description" : "Attacks scale better with strength."
             }
         ],
         "techniques" : [
@@ -258,7 +274,7 @@
                 "unarmed_allowed" : true,
                 "melee_allowed" : true,
                 "quiet" : true,
-                "description" : "Silent melee attacks"
+                "description" : "Silent melee attacks."
             }
         ],
         "onmove_buffs" : [
@@ -279,16 +295,17 @@
         "type" : "martial_art",
         "id" : "style_taekwondo",
         "name" : "Taekwondo",
-        "description" : "Taekwondo is the national sport of Korea, and was used by the South Korean army in the 20th century.  Focused on kicks and punches, it also includes strength training; your blocks absorb extra damage the stronger you are.",
+        "description" : "Taekwondo is the national sport of Korea, and was used by the South Korean army in the 20th century.  Focused on kicks and so it does not benefit from wielded weapons.  It also includes strength training; your blocks absorb extra damage the stronger you are.",
         "arm_block" : 2,
         "leg_block" : 3,
+        "force_unarmed" : true,
         "static_buffs" : [
             {
                 "id" : "taekwondo_static",
                 "name" : "Taekwondo",
                 "unarmed_allowed" : true,
                 "flat_bonuses" : [["block", "str", 0.5]],
-                "description" : "Strength decreases damage when blocking"
+                "description" : "Strength decreases damage when blocking."
             }
         ],
         "techniques" : [
@@ -351,7 +368,7 @@
                 "description" : "Unlimited dodges after attacking",
                 "buff_duration" : 4,
                 "unarmed_allowed" : true,
-                "dodges_bonus" : 100
+                "bonus_dodges" : 100
             }
         ],
         "ondodge_buffs" : [
@@ -411,8 +428,6 @@
             "bio_blade_weapon",
             "bowling_pin",
             "cudgel",
-            "diamond_knife",
-            "diamond_machete",
             "diveknife",
             "firemachete_off",
             "firemachete_on",
@@ -422,6 +437,8 @@
             "javelin",
             "javelin_iron",
             "knife_combat",
+            "knife_hunting",
+            "knife_trench",
             "kris",
             "machete",
             "makeshift_halberd",
@@ -434,6 +451,7 @@
             "primitive_knife",
             "q_staff",
             "rebar",
+            "scimitar",
             "scythe",
             "scythe_war",
             "shock_staff",
@@ -444,16 +462,17 @@
             "shishkebab_on",
             "spear_knife",
             "spear_rebar",
+            "spear_pipe",
             "spear_steel",
             "spear_survivor",
             "spear_wood",
+            "spear_homemade_halfpike",
             "stick",
             "survivor_machete",
             "tanto",
             "tonfa",
             "tonfa_wood",
             "kukri",
-            "diamond_kukri",
             "knife_rambo",
             "knife_rm42",
             "switchblade",
@@ -490,12 +509,10 @@
         ],
         "weapons" : [
             "broadsword",
-            "diamond_broadsword",
             "broadfire_off",
             "broadfire_on",
-            "sword_forged",
             "rapier",
-            "diamond_rapier",
+            "cavalry_sabre",
             "fencing_foil",
             "fencing_sabre",
             "fencing_epee",
@@ -507,7 +524,7 @@
         "type" : "martial_art",
         "id" : "style_niten",
         "name" : "Niten Ichi-Ryu",
-        "description" : "Niten Ichi-Ryu is an ancient school of combat, transmitting a style of classical Japanese swordsmanship conceived by the warrior Miyamoto Musashi.  It primarily focuses on the proper use of the katana and wakizashi, but includes staff techniques as well.",
+        "description" : "Niten Ichi-Ryu is an ancient school of combat, transmitting a style of classical Japanese swordsmanship conceived by the warrior Miyamoto Musashi.",
         "arm_block" : 99,
         "leg_block" : 99,
             "static_buffs" : [
@@ -568,26 +585,17 @@
         ],
         "weapons" : [
             "katana",
-            "diamond_katana",
             "firekatana_off",
             "firekatana_on",
             "bokken",
             "wakizashi",
-            "diamond_wakizashi",
-            "q_staff",
-            "i_staff",
-            "shock_staff",
-            "cudgel",
-            "nodachi",
-            "diamond_nodachi",
-            "l-stick",
-            "l-stick_on"
+            "nodachi"
         ]
     },{
         "type" : "martial_art",
         "id" : "style_eskrima",
         "name" : "Eskrima",
-        "description": "Eskrima, also known as Kali, is a Filipino martial art.  It emphasises rapid strikes with knife and baton weapons, along with a variety of improvised substitutes.",
+        "description": "Eskrima, also known as Kali, is a Filipino martial art.  It emphasizes rapid strikes with knife and baton weapons, along with a variety of improvised substitutes.",
         "arm_block" : 99,
         "leg_block" : 99,
         "static_buffs" : [
@@ -597,7 +605,7 @@
                 "melee_allowed" : true,
                 "min_melee" : 1,
                 "mult_bonuses" : [["damage", "bash", 1.2]],
-                "description" : "Increased bashing damage"
+                "description" : "Increased bashing damage."
             }
         ],
         "onhit_buffs" : [
@@ -633,8 +641,6 @@
             "cane",
             "cudgel",
             "cu_pipe",
-            "diamond_knife",
-            "diamond_machete",
             "diveknife",
             "fighter_sting",
             "firemachete_off",
@@ -642,6 +648,8 @@
             "glass_shiv",
             "hammer",
             "knife_combat",
+            "knife_hunting",
+            "knife_trench",
             "machete",
             "survivor_machete",
             "makeshift_knife",
@@ -649,6 +657,7 @@
             "pipe",
             "pockknife",
             "pool_cue",
+            "PR24-extended",
             "primitive_knife",
             "primitive_hammer",
             "punch_dagger",
@@ -664,7 +673,6 @@
             "wasp_sting",
             "wrench",
             "kukri",
-            "diamond_kukri",
             "knife_rambo",
             "knife_rm42",
             "l-stick",
@@ -801,7 +809,7 @@
                 "min_unarmed" : 2,
                 "buff_duration" : 3,
                 "max_stacks" : 8,
-                "flat_bonuses" : [["damage", "bash", "per", 3.0]]
+                "flat_bonuses" : [["damage", "bash", 3.0]]
             }
         ],
         "techniques" : [
@@ -915,7 +923,7 @@
         "type" : "martial_art",
         "id" : "style_lizard",
         "name" : "Lizard Kung Fu",
-        "description": "One of the Five Deadly Venoms, and likely to be refactored to a mutation at the next save-compatibility breaker.  Lizard Style focuses on using walls to your advantage.",
+        "description": "One of the Five Deadly Venoms.  Lizard Style focuses on using walls to your advantage.",
         "arm_block" : 2,
         "leg_block" : 99,
         "techniques" : [
@@ -940,7 +948,7 @@
             {
                 "id" : "venom_snake_combo_initiate",
                 "name" : "Viper Ambush",
-                "description" : "You've lured 'em in! Your next attack will be a Viper Bite.",
+                "description" : "You've lured 'em in!  Your next attack will be a Viper Bite.",
                 "unarmed_allowed" : true,
                 "min_unarmed" : 0,
                 "buff_duration" : 2,
@@ -953,7 +961,7 @@
             {
                 "id" : "venom_snake_combo_continue",
                 "name" : "Viper Lock",
-                "description" : "You bit true! Your next attack will be the Viper Strike!",
+                "description" : "You bit true!  Your next attack will be the Viper Strike!",
                 "unarmed_allowed" : true,
                 "min_unarmed" : 0,
                 "req_buffs" : [

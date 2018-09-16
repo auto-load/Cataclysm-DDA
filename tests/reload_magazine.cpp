@@ -5,14 +5,15 @@
 #include "visitable.h"
 #include "itype.h"
 
-TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) {
-    const std::string gun_id   = "m4a1";
-    const std::string gun_ammo = "223";
-    const std::string ammo_id  = "556";      // any type of compatible ammo
-    const std::string alt_ammo = "223";      // any alternative type of compatible ammo
-    const std::string bad_ammo = "9mm";      // any type of incompatible ammo
-    const std::string mag_id   = "stanag30"; // must be set to default magazine
-    const std::string bad_mag  = "glockmag"; // any incompatible magazine
+TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" )
+{
+    const itype_id gun_id   = "m4a1";
+    const ammotype gun_ammo( "223" );
+    const itype_id ammo_id  = "556";      // any type of compatible ammo
+    const itype_id alt_ammo = "223";      // any alternative type of compatible ammo
+    const itype_id bad_ammo = "9mm";      // any type of incompatible ammo
+    const itype_id mag_id   = "stanag30"; // must be set to default magazine
+    const itype_id bad_mag  = "glockmag"; // any incompatible magazine
     const int mag_cap          = 30;
 
     CHECK( ammo_id != alt_ammo );
@@ -27,11 +28,16 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
     p.remove_weapon();
     p.wear_item( item( "backpack" ) ); // so we don't drop anything
 
-    item& mag = p.i_add( item( mag_id ) );
+    item &mag = p.i_add( item( mag_id ) );
     CHECK( mag.is_magazine() == true );
     CHECK( mag.is_reloadable() == true );
+    CHECK( mag.is_reloadable_with( ammo_id ) == true );
+    CHECK( mag.is_reloadable_with( alt_ammo ) == true );
+    CHECK( mag.is_reloadable_with( bad_ammo ) == false );
     CHECK( p.can_reload( mag ) == true );
     CHECK( p.can_reload( mag, ammo_id ) == true );
+    CHECK( p.can_reload( mag, alt_ammo ) == true );
+    CHECK( p.can_reload( mag, bad_ammo ) == false );
     CHECK( mag.ammo_type() == gun_ammo );
     CHECK( mag.ammo_capacity() == mag_cap );
     CHECK( mag.ammo_current() == "null" );
@@ -41,7 +47,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
         CHECK( mag.ammo_remaining() == 0 );
 
         WHEN( "the magazine is reloaded with incompatible ammo" ) {
-            item& ammo = p.i_add( item( bad_ammo ) );
+            item &ammo = p.i_add( item( bad_ammo ) );
             bool ok = mag.reload( g->u, item_location( p, &ammo ), mag.ammo_capacity() );
             THEN( "reloading should fail" ) {
                 REQUIRE_FALSE( ok );
@@ -50,7 +56,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
         }
 
         WHEN( "the magazine is loaded with an excess of ammo" ) {
-            item& ammo = p.i_add( item( ammo_id, calendar::turn, mag_cap + 5 ) );
+            item &ammo = p.i_add( item( ammo_id, calendar::turn, mag_cap + 5 ) );
             REQUIRE( ammo.charges == mag_cap + 5 );
 
             bool ok = mag.reload( g->u, item_location( p, &ammo ), mag.ammo_capacity() );
@@ -60,14 +66,13 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                 AND_THEN( "the current ammo is updated" ) {
                     REQUIRE( mag.ammo_current() == ammo_id );
                     REQUIRE( mag.ammo_data() );
-                    REQUIRE( mag.ammo_data()->id == ammo_id );
                 }
                 AND_THEN( "the magazine is filled to capacity" ) {
                     REQUIRE( mag.ammo_remaining() == mag.ammo_capacity() );
                 }
                 AND_THEN( "a single correctly sized ammo stack remains in the inventory" ) {
                     std::vector<const item *> found;
-                    p.visit_items( [&ammo_id,&found]( const item *e ) {
+                    p.visit_items( [&ammo_id, &found]( const item * e ) {
                         if( e->typeId() == ammo_id ) {
                             found.push_back( e );
                         }
@@ -81,7 +86,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
         }
 
         WHEN( "the magazine is partially reloaded with compatible ammo" ) {
-            item& ammo = p.i_add( item( ammo_id, calendar::turn, mag_cap - 2 ) );
+            item &ammo = p.i_add( item( ammo_id, calendar::turn, mag_cap - 2 ) );
             REQUIRE( ammo.charges == mag_cap - 2 );
 
             bool ok = mag.reload( g->u, item_location( p, &ammo ), mag.ammo_capacity() );
@@ -91,14 +96,13 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                 AND_THEN( "the current ammo is updated" ) {
                     REQUIRE( mag.ammo_current() == ammo_id );
                     REQUIRE( mag.ammo_data() );
-                    REQUIRE( mag.ammo_data()->id == ammo_id );
                 }
                 AND_THEN( "the magazine is filled with the correct quantity" ) {
                     REQUIRE( mag.ammo_remaining() == mag_cap - 2 );
                 }
                 AND_THEN( "the ammo stack was completely used" ) {
                     std::vector<const item *> found;
-                    p.visit_items( [&ammo_id,&found]( const item *e ) {
+                    p.visit_items( [&ammo_id, &found]( const item * e ) {
                         if( e->typeId() == ammo_id ) {
                             found.push_back( e );
                         }
@@ -110,7 +114,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
             }
 
             AND_WHEN( "the magazine is further reloaded with matching ammo" ) {
-                item& ammo = p.i_add( item( ammo_id, calendar::turn, 10 ) );
+                item &ammo = p.i_add( item( ammo_id, calendar::turn, 10 ) );
                 REQUIRE( ammo.charges == 10 );
                 REQUIRE( mag.ammo_remaining() == mag_cap - 2 );
 
@@ -123,7 +127,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                     }
                     AND_THEN( "a single correctly sized ammo stack remains in the inventory" ) {
                         std::vector<const item *> found;
-                        p.visit_items( [&ammo_id,&found]( const item *e ) {
+                        p.visit_items( [&ammo_id, &found]( const item * e ) {
                             if( e->typeId() == ammo_id ) {
                                 found.push_back( e );
                             }
@@ -137,7 +141,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
             }
 
             AND_WHEN( "the magazine is further reloaded with compatible but different ammo" ) {
-                item& ammo = p.i_add( item( alt_ammo ) );
+                item &ammo = p.i_add( item( alt_ammo ) );
                 bool ok = mag.reload( g->u, item_location( p, &ammo ), mag.ammo_capacity() );
                 THEN( "further reloading should fail" ) {
                     REQUIRE_FALSE( ok );
@@ -146,7 +150,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
             }
 
             AND_WHEN( "the magazine is further reloaded with incompatible ammo" ) {
-                item& ammo = p.i_add( item( bad_ammo ) );
+                item &ammo = p.i_add( item( bad_ammo ) );
                 bool ok = mag.reload( g->u, item_location( p, &ammo ), mag.ammo_capacity() );
                 THEN( "further reloading should fail" ) {
                     REQUIRE_FALSE( ok );
@@ -157,7 +161,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
     }
 
     GIVEN( "an empty gun without an integral magazine" ) {
-        item& gun = p.i_add( item( gun_id ) );
+        item &gun = p.i_add( item( gun_id ) );
         CHECK( gun.is_gun() == true );
         CHECK( gun.is_reloadable() == true );
         CHECK( p.can_reload( gun ) == true );
@@ -174,7 +178,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
         CHECK( gun.ammo_data() == nullptr );
 
         WHEN( "the gun is reloaded with an incompatible magazine" ) {
-            item& mag = p.i_add( item( bad_mag ) );
+            item &mag = p.i_add( item( bad_mag ) );
             bool ok = gun.reload( g->u, item_location( p, &mag ), 1 );
             THEN( "reloading should fail" ) {
                 REQUIRE_FALSE( ok );
@@ -230,11 +234,10 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                     REQUIRE( gun.ammo_remaining() == mag_cap - 2 );
                     REQUIRE( gun.ammo_current() == ammo_id );
                     REQUIRE( gun.ammo_data() );
-                    REQUIRE( gun.ammo_data()->id == ammo_id );
                 }
 
                 AND_WHEN( "the guns magazine is further reloaded with compatible but different ammo" ) {
-                    item& ammo = p.i_add( item( alt_ammo, calendar::turn, 10 ) );
+                    item &ammo = p.i_add( item( alt_ammo, calendar::turn, 10 ) );
                     bool ok = gun.magazine_current()->reload( g->u, item_location( p, &ammo ), 10 );
                     THEN( "further reloading should fail" ) {
                         REQUIRE_FALSE( ok );
@@ -243,7 +246,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                 }
 
                 AND_WHEN( "the guns magazine is further reloaded with incompatible ammo" ) {
-                    item& ammo = p.i_add( item( bad_ammo, calendar::turn, 10 ) );
+                    item &ammo = p.i_add( item( bad_ammo, calendar::turn, 10 ) );
                     bool ok = gun.magazine_current()->reload( g->u, item_location( p, &ammo ), 10 );
                     THEN( "further reloading should fail" ) {
                         REQUIRE_FALSE( ok );
@@ -252,7 +255,7 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                 }
 
                 AND_WHEN( "the guns magazine is further reloaded with matching ammo" ) {
-                    item& ammo = p.i_add( item( ammo_id, calendar::turn, 10 ) );
+                    item &ammo = p.i_add( item( ammo_id, calendar::turn, 10 ) );
                     REQUIRE( ammo.charges == 10 );
 
                     bool ok = gun.magazine_current()->reload( g->u, item_location( p, &ammo ), 10 );
@@ -264,12 +267,13 @@ TEST_CASE( "reload_magazine", "[magazine] [visitable] [item] [item_location]" ) 
                         }
                         AND_THEN( "a single correctly sized ammo stack remains in the inventory" ) {
                             std::vector<const item *> found;
-                            p.visit_items( [&ammo_id,&found]( const item *e ) {
+                            p.visit_items( [&ammo_id, &found]( const item * e ) {
                                 if( e->typeId() == ammo_id ) {
                                     found.push_back( e );
                                 }
                                 // ignore ammo contained within guns or magazines
-                                return ( e->is_gun() || e->is_magazine() ) ? VisitResponse::SKIP : VisitResponse::NEXT;
+                                return ( e->is_gun() || e->is_magazine() ) ?
+                                       VisitResponse::SKIP : VisitResponse::NEXT;
                             } );
                             REQUIRE( found.size() == 1 );
                             REQUIRE( found[0]->charges == 8 );

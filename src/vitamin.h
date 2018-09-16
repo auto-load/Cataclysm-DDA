@@ -1,16 +1,25 @@
+#pragma once
 #ifndef VITAMIN_H
 #define VITAMIN_H
 
-#include "json.h"
-#include "effect.h"
+#include "string_id.h"
+#include "calendar.h"
 
+#include <string>
+#include <map>
+#include <utility>
+#include <vector>
+
+class JsonObject;
 class vitamin;
 using vitamin_id = string_id<vitamin>;
+class effect_type;
+using efftype_id = string_id<effect_type>;
 
 class vitamin
 {
     public:
-        vitamin() : id_( vitamin_id( "null" ) ) {}
+        vitamin() : id_( vitamin_id( "null" ) ), rate_( 1_hours ) {}
 
         const vitamin_id &id() const {
             return id_;
@@ -24,6 +33,16 @@ class vitamin
             return name_;
         }
 
+        /** Disease effect with increasing intensity proportional to vitamin deficiency */
+        const efftype_id &deficiency() const {
+            return deficiency_;
+        }
+
+        /** Disease effect with increasing intensity proportional to vitamin excess */
+        const efftype_id &excess() const {
+            return excess_;
+        }
+
         /** Lower bound for deficiency of this vitamin */
         int min() const {
             return min_;
@@ -35,16 +54,15 @@ class vitamin
         }
 
         /**
-         * Usage rate of vitamin (minutes to consume unit)
+         * Usage rate of vitamin (time to consume unit)
          * Lower bound is zero whereby vitamin is not required (but may still accumulate)
-         * If unspecified in JSON a default value of 60 minutes is used
          */
-        int rate() const {
+        time_duration rate() const {
             return rate_;
         }
 
-        /** Get applicable status effect (if any) at @ref level */
-        const efftype_id &effect( int level ) const;
+        /** Get intensity of deficiency or zero if not deficient for specified qty */
+        int severity( int qty ) const;
 
         /** Load vitamin from JSON definition */
         static void load_vitamin( JsonObject &jo );
@@ -52,17 +70,21 @@ class vitamin
         /** Get all currently loaded vitamins */
         static const std::map<vitamin_id, vitamin> &all();
 
+        /** Check consistency of all loaded vitamins */
+        static void check_consistency();
+
         /** Clear all loaded vitamins (invalidating any pointers) */
         static void reset();
 
     private:
         vitamin_id id_;
         std::string name_;
+        efftype_id deficiency_;
+        efftype_id excess_;
         int min_;
         int max_;
-        int rate_;
-        std::vector<std::pair<efftype_id, int>> deficiency_;
-        std::vector<std::pair<efftype_id, int>> excess_;
+        time_duration rate_;
+        std::vector<std::pair<int, int>> disease_;
 };
 
 #endif

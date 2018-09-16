@@ -3,13 +3,7 @@
         "type" : "ammunition_type",
         "id" : "NULL",
         "name" : "none",
-        "default" : ""
-    },
-    {
-        "type" : "ammunition_type",
-        "id" : "pointer_fake_ammo",
-        "name" : "none",
-        "default" : "pointer_fake_ammo"
+        "default" : "null"
     },
     {
         "type" : "ammunition_type",
@@ -74,8 +68,14 @@
     {
         "type" : "ammunition_type",
         "id" : "9mm",
-        "name" : "9mm",
+        "name" : "9x19mm",
         "default" : "9mm"
+    },
+    {
+        "type": "ammunition_type",
+        "id": "357sig",
+        "name": ".357 SIG",
+        "default": "357sig_jhp"
     },
     {
         "type" : "ammunition_type",
@@ -165,18 +165,18 @@
         "type" : "ammunition_type",
         "id" : "40mm",
         "name" : "40mm grenade",
-        "default" : "40mm_concussive"
+        "default" : "40mm_frag"
     },
     {
         "type" : "ammunition_type",
         "id" : "66mm",
-        "name" : "High Explosive Anti Tank warhead",
+        "name" : "high-explosive anti-tank warhead",
         "default" : "66mm_HEAT"
     },
     {
         "type" : "ammunition_type",
         "id" : "120mm",
-        "name" : "High Explosive Anti Tank warhead",
+        "name" : "high-explosive anti-tank warhead",
         "default" : "120mm_HEAT"
     },
     {
@@ -188,7 +188,7 @@
     {
         "type" : "ammunition_type",
         "id" : "m235",
-        "name" : "M235 Incendiary TPA",
+        "name" : "M235 66mm Incendiary TPA",
         "default" : "m235tpa"
     },
     {
@@ -266,14 +266,14 @@
     {
         "type" : "ammunition_type",
         "id" : "plasma",
-        "name" : "hydrogen",
+        "name" : "solid hydrogen",
         "default" : "plasma"
     },
     {
         "type" : "ammunition_type",
-        "id" : "water",
-        "name" : "water",
-        "default" : "water"
+        "id" : "flammable",
+        "name" : "flammable liquid",
+        "default" : "napalm"
     },
     {
        "type" : "ammunition_type",
@@ -362,20 +362,32 @@
     {
         "type" : "ammunition_type",
         "id" : "RPG-7",
-        "name" : "RPG-7",
+        "name" : "93mm RPG-7",
         "default" : "RPG-7_ammo"
-    },
-    {
-        "type" : "ammunition_type",
-        "id" : "dart",
-        "name" : "dart",
-        "default" : "dart"
     },
     {
         "type" : "ammunition_type",
         "id" : "rebreather_filter",
         "name" : "rebreather filter",
         "default" : "rebreather_filter"
+    },
+    {
+        "type": "ammunition_type",
+        "id": "gasfilter_s",
+        "name": "filter mask cartridge",
+        "default": "gasfilter_s"
+   },
+   {
+        "type": "ammunition_type",
+        "id": "gasfilter_m",
+        "name": "gas mask cartridge",
+        "default": "gasfilter_m"
+    },
+    {
+        "type": "ammunition_type",
+        "id": "gasfilter_l",
+        "name": "hazmat mask cartridge",
+        "default": "gasfilter_l"
     },
     {
         "type" : "ammunition_type",
@@ -429,7 +441,7 @@
         "type" : "ammunition_type",
         "id" : "fish_bait",
         "name" : "fish bait",
-        "default" : "fish_bait_meat"
+        "default" : "fish_bait"
     },
     {
         "type" : "ammunition_type",
@@ -448,5 +460,17 @@
         "id" : "chemical_spray",
         "name" : "sprayable chemical",
         "default" : "gas_fungicidal"
+    },
+    {
+        "type" : "ammunition_type",
+        "id" : "milk",
+        "name" : "milk",
+        "default" : "milk"
+    },
+    {
+        "type": "ammunition_type",
+        "id": "paintball",
+        "name": "paintball",
+        "default": "paintball"
     }
 ]
